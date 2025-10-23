@@ -10,7 +10,7 @@ const zwlr = wayland.client.zwlr;
 const flakes = @import("flakes/flake.zig");
 const snow = @import("snow.zig");
 
-pub const std_options = .{
+pub const std_options: std.Options = .{
     .log_level = .debug,
 };
 
@@ -199,7 +199,7 @@ const State = struct {
 
     fn deinit(self: *State) void {
         self.doubleBuffer.deinit();
-        self.flakes.deinit();
+        self.flakes.deinit(self.alloc);
         self.surface.destroy();
         self.alloc.destroy(self);
     }
@@ -292,21 +292,21 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, context: *
     // zig fmt: off
     switch (event) {
         .global => |global| {
-            if (mem.orderZ(u8, global.interface, wl.Compositor.getInterface().name) == .eq) {
+            if (mem.orderZ(u8, global.interface, wl.Compositor.interface.name) == .eq) {
                 context.compositor = registry.bind(global.name, wl.Compositor, 6) catch return;
 
-            } else if (mem.orderZ(u8, global.interface, wl.Shm.getInterface().name) == .eq) {
+            } else if (mem.orderZ(u8, global.interface, wl.Shm.interface.name) == .eq) {
                 context.shm = registry.bind(global.name, wl.Shm, 1) catch return;
 
-            } else if (mem.orderZ(u8, global.interface, zwlr.LayerShellV1.getInterface().name) == .eq) {
+            } else if (mem.orderZ(u8, global.interface, zwlr.LayerShellV1.interface.name) == .eq) {
                 context.layer_shell = registry.bind(global.name, zwlr.LayerShellV1, 4) catch return;
 
-            } else if (mem.orderZ(u8, global.interface, wl.Output.getInterface().name) == .eq){
+            } else if (mem.orderZ(u8, global.interface, wl.Output.interface.name) == .eq){
                 const output : *wl.Output = registry.bind(global.name, wl.Output, 4) catch return;
                 
                 const outputInfo = OutputInfo.init(output, global.name, context.alloc) 
                     catch { std.debug.print("Cannot create new output\n", .{}); return; };
-                context.outputs.append(outputInfo) catch return;
+                context.outputs.append(context.alloc, outputInfo) catch return;
                 output.setListener(*Context, outputListener, context);
             }
         },

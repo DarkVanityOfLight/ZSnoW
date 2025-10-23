@@ -9,7 +9,7 @@ fn clearBuffer(buffer_mem: []u32) void {
 
 // Float flakes
 pub fn generateRandomFlake(outputWidth: u32, alloc: std.mem.Allocator) !*flakes.Flake {
-    var rand = std.rand.DefaultPrng.init(blk: {
+    var rand = std.Random.DefaultPrng.init(blk: {
         var seed: u64 = 40315527606673217;
         _ = std.posix.getrandom(std.mem.asBytes(&seed)) catch break :blk seed;
         break :blk seed;
@@ -89,7 +89,7 @@ pub fn renderFlakes(flakeArray: *FlakeArray, buffer_mem: []u32, outputWidth: u32
 }
 
 pub fn spawnNewFlakes(flakeArray: *FlakeArray, alloc: std.mem.Allocator, i: u32, outputWidth: u32) !u32 {
-    var rand = std.rand.DefaultPrng.init(blk: {
+    var rand = std.Random.DefaultPrng.init(blk: {
         var seed: u64 = undefined;
         _ = std.posix.getrandom(std.mem.asBytes(&seed)) catch null;
         break :blk seed;
@@ -99,7 +99,7 @@ pub fn spawnNewFlakes(flakeArray: *FlakeArray, alloc: std.mem.Allocator, i: u32,
     for (0..i) |_| {
         if (rand.random().uintAtMost(u16, 1000) >= 999) {
             const flake = try generateRandomFlake(outputWidth, alloc);
-            try flakeArray.append(flake);
+            try flakeArray.append(alloc, flake);
             j -= 1;
         }
     }
