@@ -9,6 +9,7 @@ const zwlr = wayland.client.zwlr;
 
 const flakes = @import("flakes/flake.zig");
 const snow = @import("snow.zig");
+const DoubleBuffer = @import("DoubleBuffer.zig");
 
 pub const std_options: std.Options = .{
     .log_level = .debug,
@@ -65,110 +66,8 @@ const OutputInfo = struct {
     }
 };
 
-// zig fmt: on
-
-const DoubleBuffer = struct {
-    buffer1: *wl.Buffer,
-    buffer2: *wl.Buffer,
-    i: bool,
-    memory1: []u32,
-    memory2: []u32,
-    fd: i32,
-    total_size: u64,
-    name: []u8,
-    alloc: std.mem.Allocator,
-
-    // FIXME: Check that width height are valid
-    fn init(width: u32, height: u32, name: []const u8, shm: *wl.Shm, alloc: std.mem.Allocator) !*DoubleBuffer {
-        // std.debug.print("{}x{}\n", .{ width, height });
-        const stride: u64 = width * 4;
-        const size = stride * height * 2;
-        const fd = try posix.memfd_create(name, 0);
-        try posix.ftruncate(fd, size);
-
-        const data = blk: {
-            const raw = try posix.mmap(
-                null,
-                @intCast(size),
-                posix.PROT.READ | posix.PROT.WRITE,
-                .{ .TYPE = .SHARED },
-                fd,
-                0,
-            );
-            break :blk std.mem.bytesAsSlice(u32, raw);
-        };
-
-        const pool = try shm.createPool(fd, @intCast(size));
-
-        const buffer1 = try pool.createBuffer(0, @intCast(width), @intCast(height), @intCast(stride), wl.Shm.Format.argb8888);
-        const buffer2 = try pool.createBuffer(@intCast(size / 2), @intCast(width), @intCast(height), @intCast(stride), wl.Shm.Format.argb8888);
-        pool.destroy();
-
-        var bufferName = try alloc.alloc(u8, name.len + "waysnow_".len);
-        @memcpy(bufferName[0.."waysnow_".len], "waysnow_");
-        @memcpy(bufferName["waysnow_".len .. "waysnow_".len + name.len], name);
-
-        const db = try alloc.create(DoubleBuffer);
-
-        // zig fmt: off
-        db.* = DoubleBuffer{ 
-            .buffer1 = buffer1,
-            .buffer2 = buffer2,
-            .memory1 = data[0..(size/(2 * 4))],
-            .memory2 = data[(size / (2 * 4)) .. size / 4],
-            .i = true,
-            .fd = fd,
-            .total_size = size,
-            .alloc = alloc,
-            .name = bufferName
-        };
-        // zig fmt: on
-        return db;
-    }
-
-    fn current(self: *DoubleBuffer) *wl.Buffer {
-        return if (self.i) {
-            return self.buffer1;
-        } else {
-            return self.buffer2;
-        };
-    }
-
-    fn next(self: *DoubleBuffer) *wl.Buffer {
-        defer self.i = !self.i;
-        return if (self.i) {
-            return self.buffer1;
-        } else {
-            return self.buffer2;
-        };
-    }
-
-    fn mem(self: *DoubleBuffer) []u32 {
-        return if (self.i) {
-            return self.memory1;
-        } else {
-            return self.memory2;
-        };
-    }
-
-    fn deinit(self: *DoubleBuffer) void {
-        self.buffer1.destroy();
-        self.buffer2.destroy();
-        // TODO: Is this required?
-        const memory: []const u32 = self.memory1.ptr[0 .. self.memory1.len + self.memory2.len];
-        const u8mem: []align(4096) const u8 = @alignCast(std.mem.bytesAsSlice(u8, memory));
-
-        std.posix.munmap(u8mem);
-        posix.close(self.fd);
-
-        self.alloc.free(self.name);
-        self.alloc.destroy(self);
-    }
-};
-
-// zig fmt: off
 const State = struct { 
-    doubleBuffer: *DoubleBuffer,
+    doubleBuffer: DoubleBuffer,
     surface: *wl.Surface,
     flakes: snow.FlakeArray,
     alloc: std.mem.Allocator,
@@ -179,7 +78,7 @@ const State = struct {
     time: ?u32,
     //callBackFunction: fn(cb: *wl.Callback, event: wl.Callback.Event, state: *State) void
 
-    fn init(doubleBuffer: *DoubleBuffer, surface: *wl.Surface, running: *bool, outputHeight: u32, outputWidth: u32, alloc: std.mem.Allocator) !*State {
+    fn init(doubleBuffer: DoubleBuffer, surface: *wl.Surface, running: *bool, outputHeight: u32, outputWidth: u32, alloc: std.mem.Allocator) !*State {
         // zig fmt: off
         const state = try alloc.create(State);
         state.* = State{ 
@@ -211,23 +110,28 @@ fn manageOutput(alloc: std.mem.Allocator, output: *const OutputInfo, context: *C
     const compositor = context.compositor orelse return error.NoWlCompositor;
     const layer_shell = context.layer_shell orelse return error.NoLayerShell;
 
-    var doubleBuffer = try DoubleBuffer.init(@intCast(output.pWidth), @intCast(output.pHeight), output.name, shm, alloc);
+    var doubleBuffer = try DoubleBuffer.init(
+        alloc,
+        @intCast(output.pWidth),
+        @intCast(output.pHeight),
+        output.name,
+        shm,
+    );
     @memset(doubleBuffer.mem(), 0x00000000);
-    _ = doubleBuffer.next();
+    doubleBuffer.swap();
     @memset(doubleBuffer.mem(), 0x00000000);
-    _ = doubleBuffer.next();
+    doubleBuffer.swap();
 
     const surface = try compositor.createSurface();
     const region = try compositor.createRegion();
     surface.setInputRegion(region); // FIXME: This leaks
-    // defer surface.destroy();
 
     // Make a layer surface
     const layer_surface = try layer_shell.getLayerSurface(
         surface,
         output.output,
         zwlr.LayerShellV1.Layer.background,
-        "waysnow",
+        "ZSnoW",
     );
     layer_surface.setSize(output.pWidth, output.pHeight);
 
@@ -240,7 +144,7 @@ fn manageOutput(alloc: std.mem.Allocator, output: *const OutputInfo, context: *C
     if (context.display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
 
     // Need to attach buffer once to receive frame callbacks
-    surface.attach(doubleBuffer.next(), 0, 0);
+    surface.attach(doubleBuffer.current(), 0, 0);
 
     // Init rendering via frame callback
     const state = try State.init(doubleBuffer, surface, running, output.pHeight, output.pWidth, alloc);
@@ -415,7 +319,7 @@ fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, state: *State) void
                 state.surface.commit();
 
                 // Work on the next frame
-                _ = state.doubleBuffer.next();
+                state.doubleBuffer.swap();
                 const missing = snow.updateFlakes(&state.flakes, state.alloc, state.outputHeight, timeDelta) catch 0;
 
                 const render_init_flakes = state.missing_flakes + missing;
