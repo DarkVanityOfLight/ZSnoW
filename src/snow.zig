@@ -90,15 +90,17 @@ pub fn spawnNewFlakes(flakeArray: *FlakeArray, alloc: std.mem.Allocator, i: u32,
 }
 
 fn zToColor(z: u8) u32 {
-    const bigZ: u16 = @intCast(z);
-    const alpha: u32 = std.math.clamp(std.math.clamp(255 - z, 50, 255) + bigZ, 0, 255);
-    const gray_factor: u32 = std.math.clamp(std.math.clamp(255 - z, 100, 255) + bigZ, 0, 255);
+    // Bias: Dividing z prevents the values from ever reaching 0 (black/transparent).
+    // Alpha will range from 255 down to 128 (z / 2)
+    // RGB will range from 255 down to 192 (z / 4)
+    const alpha: u32 = 255 - (@as(u32, z) / 2);
+    const gray: u32 = 255 - (@as(u32, z) / 4);
 
-    const red = gray_factor;
-    const green = gray_factor;
-    const blue = gray_factor;
+    const r = gray;
+    const g = gray;
+    const b = gray;
 
-    return (alpha << 24) | (red << 16) | (green << 8) | blue;
+    return (alpha << 24) | (r << 16) | (g << 8) | b;
 }
 
 fn renderFlakeToBuffer(flake: *const flakes.Flake, m: []u32, width: u32) void {
@@ -114,7 +116,7 @@ fn renderFlakeToBuffer(flake: *const flakes.Flake, m: []u32, width: u32) void {
                 // Calculate the index in the buffer and ensure we are within bounds
                 const index = ((coordinate.y + row_num) * width) + (coordinate.x + column_num);
                 if (index < m.len) {
-                    //Shift alpha chanel to its position and OR it with color white
+                    //Shift alpha channel to its position and OR it with color white
                     m[index] = color;
                 }
             }
