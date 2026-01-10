@@ -24,20 +24,16 @@ pub const Context = struct {
     layer_shell: ?*zwlr.LayerShellV1,
     outputs: std.ArrayList(OutputInfo),
     alloc: std.mem.Allocator,
-    running: *bool,
     display: *wl.Display,
 };
 
 /// Initializes required fields in OutputInfo to manage an output
-fn manageOutput(alloc: std.mem.Allocator, output: *OutputInfo, context: *Context) !void {
+fn manageOutput(output: *OutputInfo, context: *Context) !void {
     try output.activate(context);
     output.missing_flakes = nFlakes;
 
-    const running: *bool = try alloc.create(bool);
-    running.* = true;
-
     // Listen for configure and kill calls
-    output.state.?.layer_surface.setListener(*bool, layerSurfaceListener, running);
+    output.state.?.layer_surface.setListener(*OutputInfo, layerSurfaceListener, output);
 
     output.state.?.surface.commit();
     if (context.display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
@@ -68,22 +64,18 @@ pub fn main() !void {
         .shm = null,
         .compositor = null,
         .layer_shell = null,
-        // .outputs = &outputs,
         .alloc = alloc,
-        .running = &running,
         .display = display,
         .outputs = try std.ArrayList(OutputInfo).initCapacity(alloc, 5),
     };
 
     registry.setListener(*Context, registryListener, &context);
 
-    // Blocking roundtrip call to get context
+    // Blocking roundtrip call to finish configure context
     if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
 
     // Keep running
-    while (running) {
-        if (display.dispatch() != .SUCCESS) return error.Dispatchfailed;
-    }
+    while (true) if (display.dispatch() != .SUCCESS) return error.Dispatchfailed;
 
     // Will never happen rn
     running = false;
@@ -133,7 +125,7 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, context: *
 
 /// Listen to events of our layer surface
 // TODO: Pass context instead of running and set correct size
-fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Event, running: *bool) void {
+fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Event, output: *OutputInfo) void {
     switch (event) {
         .configure => |configure| {
             std.log.debug("Received configure call for layer surface", .{});
@@ -142,7 +134,7 @@ fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSu
 
         .closed => {
             std.log.info("Received closing call", .{});
-            running.* = false;
+            output.running = false;
         }
 
     }
@@ -164,9 +156,6 @@ fn outputListener(output: *wl.Output, event: wl.Output.Event, context: *Context)
 
     std.log.debug("Event {s} on output: {}", .{@tagName(event), outputInfo.uname});
     switch (event) {
-        .geometry => |geometry| {
-            _ = geometry;
-        },
         .mode => |geometry| {
             outputInfo.height = @intCast(geometry.height);
             outputInfo.width = @intCast(geometry.width);
@@ -193,6 +182,7 @@ fn outputListener(output: *wl.Output, event: wl.Output.Event, context: *Context)
 fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputInfo) void{
     switch(event){
         .done => {
+            if (!output.running) return;
 
             if (output.state) |*s|{
                 // Handle future callbacks

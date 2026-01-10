@@ -26,6 +26,7 @@ height: u32 = 0,
 width: u32 = 0,
 missing_flakes: u32 = 0,
 time: u32 = 0,
+running: bool = true,
 
 state: ?ActiveState = null,
 
