@@ -12,10 +12,9 @@ memory1: []u32,
 memory2: []u32,
 fd: i32,
 total_size: u64,
-alloc: std.mem.Allocator,
 
 // FIXME: Check that width height are valid
-pub fn init(alloc: std.mem.Allocator, width: u32, height: u32, name: []const u8, shm: *wl.Shm) !Self {
+pub fn init(width: u32, height: u32, name: []const u8, shm: *wl.Shm) !Self {
     // std.debug.print("{}x{}\n", .{ width, height });
     const stride: u64 = width * 4;
     const size = stride * height * 2;
@@ -33,6 +32,7 @@ pub fn init(alloc: std.mem.Allocator, width: u32, height: u32, name: []const u8,
         );
         break :blk std.mem.bytesAsSlice(u32, raw);
     };
+    @memset(data, 0x00000000);
 
     const pool = try shm.createPool(fd, @intCast(size));
 
@@ -60,7 +60,6 @@ pub fn init(alloc: std.mem.Allocator, width: u32, height: u32, name: []const u8,
         .i = true,
         .fd = fd,
         .total_size = size,
-        .alloc = alloc,
     };
     return db;
 }
