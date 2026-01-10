@@ -24,7 +24,6 @@ pub fn generateRandomFlake(outputWidth: u32, alloc: std.mem.Allocator) !*flakes.
     const normalized_exp = std.math.clamp(raw_exp / 3.0, 0.0, 1.0); // Scale and normalize
     const dy = 0.1 + normalized_exp * (0.3 - 0.1); // Map to [0.1, 0.3]
 
-    // zig fmt: off
     flake.* = try flakes.Flake.init(
         pattern,
         @floatFromInt(rand.random().uintAtMost(u32, outputWidth)),
@@ -33,9 +32,8 @@ pub fn generateRandomFlake(outputWidth: u32, alloc: std.mem.Allocator) !*flakes.
         dy,
         0,
         rand.random().uintAtMost(usize, (pattern.maxScale orelse 1)),
-        alloc
+        alloc,
     );
-    // zig fmt: on
 
     return flake;
 }
