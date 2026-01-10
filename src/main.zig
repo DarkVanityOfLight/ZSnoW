@@ -166,7 +166,7 @@ fn outputListener(output: *wl.Output, event: wl.Output.Event, context: *Context)
         },
 
         .done => {
-            manageOutput(context.alloc, outputInfo, context)
+            manageOutput( outputInfo, context)
                 catch {std.log.warn("Failed to manage output", .{}); return;};
             std.log.info("Done managing output {s}, size is {}x{}", .{outputInfo.name, outputInfo.width, outputInfo.height});
         },
