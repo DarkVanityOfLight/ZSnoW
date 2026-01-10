@@ -218,9 +218,17 @@ fn manageOutput(alloc: std.mem.Allocator, output: *const OutputInfo, context: *C
     _ = doubleBuffer.next();
 
     const surface = try compositor.createSurface();
+    const region = try compositor.createRegion();
+    surface.setInputRegion(region); // FIXME: This leaks
+    // defer surface.destroy();
 
     // Make a layer surface
-    const layer_surface: *zwlr.LayerSurfaceV1 = try layer_shell.getLayerSurface(surface, output.output, zwlr.LayerShellV1.Layer.background, "waysnow");
+    const layer_surface = try layer_shell.getLayerSurface(
+        surface,
+        output.output,
+        zwlr.LayerShellV1.Layer.background,
+        "waysnow",
+    );
     layer_surface.setSize(output.pWidth, output.pHeight);
 
     const running: *bool = try alloc.create(bool);
