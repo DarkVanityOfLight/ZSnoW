@@ -40,44 +40,26 @@ pub fn generateRandomFlake(outputWidth: u32, alloc: std.mem.Allocator) !*flakes.
     return flake;
 }
 
-pub fn updateFlakes(flakeArray: *FlakeArray, alloc: std.mem.Allocator, height: u32, timeDelta: u32) !u32 {
-    const to_remove_raw = try alloc.alloc(u32, flakeArray.items.len);
-    //std.debug.print("to_remove_raw {x}\n", .{@intFromPtr(to_remove_raw.ptr)});
-    defer alloc.free(to_remove_raw);
+pub fn updateFlakes(flakeArray: *FlakeArray, alloc: std.mem.Allocator, height: u32, timeDelta: u32) u32 {
+    const floatDelta = @as(f32, @floatFromInt(timeDelta));
+    var removed: u32 = 0;
+    var i: usize = flakeArray.items.len;
 
-    var i: u32 = 0;
-    var j: u32 = 0;
+    while (i > 0) {
+        i -= 1;
+        const flake = flakeArray.items[i];
 
-    // Check that the timeDelta fits the float type
-    const floatDelta: f64 = blk: {
-        const trans: f64 = @floatFromInt(timeDelta);
-        if (trans == std.math.inf(f64)) {
-            break :blk @as(f64, 1);
-        } else {
-            break :blk trans;
-        }
-    };
-
-    //FIXME: Check that the multiplication doesn't overflow
-
-    for (flakeArray.items) |flake| {
         flake.move(flake.dx * floatDelta, flake.dy * floatDelta);
+
         if (flake.normalizeY() >= height) {
-            to_remove_raw[i] = j;
-            i += 1;
+            _ = flakeArray.swapRemove(i);
+            flake.deinit();
+            alloc.destroy(flake);
+            removed += 1;
         }
-        j += 1;
     }
 
-    const to_remove = to_remove_raw[0..i];
-    std.mem.sort(u32, to_remove, {}, comptime std.sort.desc(u32));
-    for (to_remove) |index| {
-        const flake = flakeArray.orderedRemove(index);
-        flake.deinit();
-        alloc.destroy(flake);
-    }
-
-    return i;
+    return removed;
 }
 
 pub fn renderFlakes(flakeArray: *FlakeArray, buffer_mem: []u32, outputWidth: u32) !void {

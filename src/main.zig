@@ -207,7 +207,7 @@ fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputInfo
                 &output.flakes,
                 output.alloc,
                 output.height,
-                timeDelta) catch 0;
+                timeDelta);
                 const render_init_flakes = output.missing_flakes + missing;
 
                 const missing_flakes = snow.spawnNewFlakes(
