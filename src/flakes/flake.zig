@@ -123,6 +123,7 @@ pub const Flake = struct {
 
     pub fn init(pattern: *const FlakePattern, x: f32, y: f32, z: u8, dy: f64, dx: f64, scale: ?usize, alloc: std.mem.Allocator) !Flake {
         var arena = std.heap.ArenaAllocator.init(alloc);
+        errdefer arena.deinit();
         const arenaAlloc = arena.allocator();
         const scaledPattern = try arenaAlloc.create(FlakePattern);
         if ((scale orelse 0) > 1) {
