@@ -65,8 +65,14 @@ pub fn current(self: *Self) *wl.Buffer {
     return self.buffers[self.current_index];
 }
 
-pub fn swap(self: *Self) void {
-    self.current_index ^= 1;
+pub fn swap(self: *Self) bool {
+    const next = self.current_index ^ 1;
+
+    if (self.busy[next])
+        return false;
+
+    self.current_index = next;
+    return true;
 }
 
 pub fn mem(self: *Self) []u32 {
@@ -77,4 +83,34 @@ pub fn deinit(self: *Self) void {
     for (self.buffers) |buffer| buffer.destroy();
 
     posix.munmap(self.memory);
+}
+
+pub fn listen(self: *Self) void {
+    for (self.buffers) |buffer| {
+        buffer.setListener(*Self, bufferListener, self);
+    }
+}
+
+fn bufferListener(
+    buffer: *wl.Buffer,
+    event: wl.Buffer.Event,
+    self: *Self,
+) void {
+    switch (event) {
+        .release => {
+            for (self.buffers, 0..) |b, i| {
+                if (b == buffer) {
+                    self.busy[i] = false;
+                    return;
+                }
+            }
+        },
+    }
+}
+
+pub fn attach(self: *Self, surface: *wl.Surface) void {
+    const i = self.current_index;
+
+    surface.attach(self.buffers[i], 0, 0);
+    self.busy[i] = true;
 }

@@ -203,10 +203,6 @@ fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputInfo
                 const timeDelta = currentTimeInMs - (output.time);
                 output.time = currentTimeInMs;
 
-                // Work on the next frame
-                s.doubleBuffer.swap();
-
-
                 const missing = snow.updateFlakes(
                 &output.flakes,
                 output.alloc,
@@ -225,6 +221,11 @@ fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputInfo
                     break :blk 0;    
                 };
                 output.missing_flakes = missing_flakes;
+
+
+                // Work on the next frame if buffer is free
+                if (!s.doubleBuffer.swap()) 
+                    return;
 
                 snow.renderFlakes(
                 &output.flakes,

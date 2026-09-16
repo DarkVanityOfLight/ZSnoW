@@ -99,7 +99,7 @@ pub fn deinit(self: *Self) void {
 }
 
 pub fn attachCurrentBuffer(self: *Self) void {
-    self.state.?.surface.attach(self.state.?.doubleBuffer.current(), 0, 0);
+    self.state.?.doubleBuffer.attach(self.state.?.surface);
 }
 
 pub fn setName(self: *Self, name: [*:0]const u8) void {
