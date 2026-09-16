@@ -80,10 +80,10 @@ pub fn deinit(self: *Self) void {
     self.alloc.free(self.name);
     self.flakes.deinit(self.alloc);
     if (self.state) |*s| {
-        s.surface.destroy();
         s.doubleBuffer.deinit();
-        s.layer_surface.destroy();
         s.input_region.destroy();
+        s.layer_surface.destroy();
+        s.surface.destroy();
     }
     self.output.destroy();
 }
