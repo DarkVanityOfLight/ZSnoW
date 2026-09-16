@@ -95,7 +95,13 @@ pub fn deinit(self: *Self) void {
 
     if (self.name) |name|
         self.alloc.free(name);
+
+    for (self.flakes.items) |flake| {
+        flake.deinit();
+        self.alloc.destroy(flake);
+    }
     self.flakes.deinit(self.alloc);
+
     self.output.destroy();
 }
 
