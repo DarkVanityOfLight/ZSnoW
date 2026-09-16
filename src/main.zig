@@ -195,10 +195,17 @@ fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputInfo
 
             if (output.state) |*s|{
                 // Handle future callbacks
+                s.frame_callback = null;
                 cb.destroy();
-                const cbN = s.surface.frame() catch return;
+
+                const cbN = s.surface.frame() catch |err| {
+                    std.log.err("Cannot schedule animation frame: {s}", .{@errorName(err)});
+                    output.running = false;
+                    return;
+                };
+
                 cbN.setListener(*OutputInfo, frameCallback, output);
-                output.state.?.frame_callback = cbN;
+                s.frame_callback = cbN;
 
                 output.attachCurrentBuffer();
                 s.surface.damage(0, 0, std.math.maxInt(i32), std.math.maxInt(i32));
