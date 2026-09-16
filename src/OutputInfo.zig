@@ -77,6 +77,7 @@ pub fn activate(self: *Self, context: *Context) !void {
         .doubleBuffer = try DoubleBuffer.init(context.io, self.width, self.height, self.name.?, shm),
     };
     self.running = true;
+    self.state.?.doubleBuffer.listen();
 }
 
 pub fn deactivate(self: *Self) void {
