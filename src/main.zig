@@ -167,8 +167,8 @@ fn outputListener(output: *wl.Output, event: wl.Output.Event, context: *Context)
         .mode => |geometry| {
             if (!geometry.flags.current) return;
 
-            outputInfo.height = @intCast(geometry.height);
-            outputInfo.width = @intCast(geometry.width);
+            outputInfo.mode_height = @intCast(geometry.height);
+            outputInfo.mode_width = @intCast(geometry.width);
         },
 
         .name => |name|{
@@ -177,7 +177,21 @@ fn outputListener(output: *wl.Output, event: wl.Output.Event, context: *Context)
             };
         },
 
+        .scale => |scale| {
+            outputInfo.scale = scale.factor;
+        },
+
+        .geometry => |geometry|{
+            outputInfo.swap_dimensions = switch (geometry.transform) {
+                .@"90", .@"270", .flipped_90, .flipped_270 => true,
+                else => false,
+            };
+        },
+
         .done => {
+            // Derive dimensions from the mode once all output events have arrived.
+            outputInfo.width = if (outputInfo.swap_dimensions) outputInfo.mode_height else outputInfo.mode_width;
+            outputInfo.height = if (outputInfo.swap_dimensions) outputInfo.mode_width else outputInfo.mode_height;
             manageOutput(outputInfo, context) catch {std.log.warn("Failed to configure output", .{}); return;};
             std.log.info("Done managing output {s}, size is {}x{}", .{outputInfo.name orelse "unnamed", outputInfo.width, outputInfo.height});
         },

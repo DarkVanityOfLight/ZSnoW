@@ -25,10 +25,14 @@ flakes: snow.FlakeArray,
 // Defaultet
 height: u32 = 0,
 width: u32 = 0,
+mode_height: u32 = 0,
+mode_width: u32 = 0,
+swap_dimensions: bool = false,
 missing_flakes: u32 = 0,
 time: u32 = 0,
 running: bool = true,
 prng: std.Random.DefaultPrng,
+scale: i32 = 1,
 
 state: ?ActiveState = null,
 
@@ -57,6 +61,9 @@ pub fn activate(self: *Self, context: *Context) !void {
     // Create a surface
     const surface = try compositor.createSurface();
     errdefer surface.destroy();
+    surface.setBufferScale(self.scale);
+
+    // Set input region none
     const input_region = try compositor.createRegion();
     errdefer input_region.destroy();
     surface.setInputRegion(input_region);
