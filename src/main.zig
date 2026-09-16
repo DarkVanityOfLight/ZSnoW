@@ -200,7 +200,7 @@ fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputInfo
 
                 // Calculate time between callbacks
                 const currentTimeInMs = event.done.callback_data;
-                const timeDelta = currentTimeInMs - (output.time);
+                const timeDelta = currentTimeInMs -% (output.time);
                 output.time = currentTimeInMs;
 
                 const missing = snow.updateFlakes(
