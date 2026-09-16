@@ -30,6 +30,9 @@ pub const Context = struct {
 
 /// Initializes required fields in OutputInfo to manage an output
 fn manageOutput(output: *OutputInfo, context: *Context) !void {
+    // Deactivate old if exists
+    output.deactivate();
+
     try output.activate(context);
     output.missing_flakes = nFlakes;
 
@@ -171,7 +174,7 @@ fn outputListener(output: *wl.Output, event: wl.Output.Event, context: *Context)
         },
 
         .done => {
-            outputInfo.applyConfiguration(context) catch {std.log.warn("Failed to configure output", .{}); return;};
+            manageOutput(outputInfo, context) catch {std.log.warn("Failed to configure output", .{}); return;};
             std.log.info("Done managing output {s}, size is {}x{}", .{outputInfo.name orelse "unnamed", outputInfo.width, outputInfo.height});
         },
 
