@@ -73,49 +73,70 @@ pub fn main(init: std.process.Init) !void {
     if (display.dispatch() != .SUCCESS) return error.Dispatchfailed;
 }
 
+fn isInterface(interface: [*:0]const u8, comptime T: type) bool {
+    return mem.orderZ(u8, interface, T.interface.name) == .eq;
+}
+
+fn addOutput(
+    context: *Context,
+    registry: *wl.Registry,
+    name: u32,
+) !void {
+    const output = try registry.bind(name, wl.Output, 4);
+    errdefer output.release();
+
+    const info = try context.alloc.create(OutputInfo);
+    errdefer context.alloc.destroy(info);
+
+    info.* = try OutputInfo.init(
+        context.alloc,
+        context.io,
+        output,
+        name,
+    );
+    errdefer info.deinit();
+
+    try context.outputs.append(context.alloc, info);
+
+    output.setListener(*Context, outputListener, context);
+}
+
+fn removeOutput(context: *Context, name: u32) void {
+    for (context.outputs.items, 0..) |info, i| {
+        if (info.uname != name)
+            continue;
+
+        _ = context.outputs.swapRemove(i);
+
+        info.deinit();
+        context.alloc.destroy(info);
+        return;
+    }
+}
+
 /// Listen to the registry events, to update collect what we need
 fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, context: *Context) void {
     // zig fmt: off
     switch (event) {
         .global => |global| {
-            if (mem.orderZ(u8, global.interface, wl.Compositor.interface.name) == .eq) {
+            if (isInterface(global.interface, wl.Compositor)) {
                 context.compositor = registry.bind(global.name, wl.Compositor, 6) catch return;
 
-            } else if (mem.orderZ(u8, global.interface, wl.Shm.interface.name) == .eq) {
+            } else if (isInterface(global.interface, wl.Shm)) {
                 context.shm = registry.bind(global.name, wl.Shm, 1) catch return;
 
-            } else if (mem.orderZ(u8, global.interface, zwlr.LayerShellV1.interface.name) == .eq) {
+            } else if (isInterface(global.interface, zwlr.LayerShellV1)) {
                 context.layer_shell = registry.bind(global.name, zwlr.LayerShellV1, 4) catch return;
 
-            } else if (mem.orderZ(u8, global.interface, wl.Output.interface.name) == .eq){
-                const output : *wl.Output = registry.bind(global.name, wl.Output, 4) catch return;
-                
-                const output_info = context.alloc.create(OutputInfo) catch return;
-                output_info.* = OutputInfo.init(context.alloc, context.io, output, global.name) 
-                    catch { std.debug.print("Cannot create new output\n", .{}); return; };
-
-                context.outputs.append(context.alloc, output_info) catch {
-                    output_info.deinit();
-                    context.alloc.destroy(output_info);
-                    return;
+            } else if (isInterface(global.interface, wl.Output)) {
+                addOutput(context, registry, global.name) catch |err| {
+                    std.log.err("Failed to register output: {}", .{err});
                 };
-
-                output.setListener(*Context, outputListener, context);
             }
         },
-        .global_remove => |global_remove|{
-            std.debug.print("Deregistering output: {}\n", .{global_remove.name});
-            var i :usize= 0;
-            for (context.outputs.items) |outputInfo|{
-                if(outputInfo.*.uname == global_remove.name){
-                    _ = context.outputs.swapRemove(i);
-
-                    outputInfo.deinit();
-                    context.alloc.destroy(outputInfo);
-                    break;
-                }
-                i += 1;
-            }
+        .global_remove => |global|{
+            std.log.debug("Deregistering output: {}", .{global.name});
+            removeOutput(context, global.name);
         },
     }
 }
