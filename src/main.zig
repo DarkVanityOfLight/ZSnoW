@@ -162,6 +162,8 @@ fn outputListener(output: *wl.Output, event: wl.Output.Event, context: *Context)
     std.log.debug("Event {s} on output: {}", .{@tagName(event), outputInfo.uname});
     switch (event) {
         .mode => |geometry| {
+            if (!geometry.flags.current) return;
+
             outputInfo.height = @intCast(geometry.height);
             outputInfo.width = @intCast(geometry.width);
         },
