@@ -76,6 +76,7 @@ pub fn activate(self: *Self, context: *Context) !void {
         .layer_surface = layer_surface,
         .doubleBuffer = try DoubleBuffer.init(context.io, self.width, self.height, self.name.?, shm),
     };
+    self.running = true;
 }
 
 pub fn deactivate(self: *Self) void {
