@@ -112,3 +112,13 @@ pub fn applyConfiguration(self: *Self, context: *Context) !void {
     self.deactivate();
     try self.activate(context);
 }
+
+pub fn resetFlakesTo(self: *Self, nFlakes: u32) void {
+    for (self.flakes.items) |flake| {
+        flake.deinit();
+        self.alloc.destroy(flake);
+    }
+
+    self.flakes.clearRetainingCapacity();
+    self.missing_flakes = nFlakes;
+}

@@ -32,9 +32,9 @@ pub const Context = struct {
 fn manageOutput(output: *OutputInfo, context: *Context) !void {
     // Deactivate old if exists
     output.deactivate();
-
     try output.activate(context);
-    output.missing_flakes = nFlakes;
+
+    output.resetFlakesTo(nFlakes);
 
     // Listen for configure and kill calls
     output.state.?.layer_surface.setListener(*OutputInfo, layerSurfaceListener, output);
