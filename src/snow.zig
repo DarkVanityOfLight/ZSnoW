@@ -13,6 +13,7 @@ pub fn generateRandomFlake(rand: std.Random, outputWidth: u32, alloc: std.mem.Al
 
     const pattern = flakes.FlakePatterns[flake_int];
     const flake = try alloc.create(flakes.Flake);
+    errdefer alloc.destroy(flake);
 
     const raw_exp = rand.floatExp(f64);
     const normalized_exp = std.math.clamp(raw_exp / 3.0, 0.0, 1.0); // Scale and normalize
@@ -66,8 +67,12 @@ pub fn spawnNewFlakes(rand: std.Random, flakeArray: *FlakeArray, alloc: std.mem.
     var j = i;
     for (0..i) |_| {
         if (rand.uintAtMost(u16, 1000) >= 999) {
-            const flake = try generateRandomFlake(rand, outputWidth, alloc);
-            try flakeArray.append(alloc, flake);
+            const flake = generateRandomFlake(rand, outputWidth, alloc) catch continue;
+            flakeArray.append(alloc, flake) catch {
+                flake.deinit();
+                alloc.destroy(flake);
+                continue;
+            };
             j -= 1;
         }
     }

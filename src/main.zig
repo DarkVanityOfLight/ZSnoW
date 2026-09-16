@@ -209,12 +209,12 @@ fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputInfo
                 const timeDelta = currentTimeInMs -% (output.time);
                 output.time = currentTimeInMs;
 
-                const missing = snow.updateFlakes(
+                const removed = snow.updateFlakes(
                 &output.flakes,
                 output.alloc,
                 output.height,
                 timeDelta);
-                const render_init_flakes = output.missing_flakes + missing;
+                const render_init_flakes = output.missing_flakes + removed;
 
                 const missing_flakes = snow.spawnNewFlakes(
                 output.prng.random(),
