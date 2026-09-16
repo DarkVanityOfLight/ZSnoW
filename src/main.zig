@@ -130,11 +130,13 @@ fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSu
             // Need to attach buffer once to receive frame callbacks
             output.attachCurrentBuffer();
 
-            // Init rendering via frame callback
-            // This callback exists once after that it will get destroyed and another starts
-            const callback = output.state.?.surface.frame() catch return;
-            callback.setListener(*OutputInfo, frameCallback, output);
-            output.state.?.frame_callback = callback;
+            if(output.state.?.frame_callback == null) {
+                // Init rendering via frame callback
+                // This callback exists once after that it will get destroyed and another starts
+                const callback = output.state.?.surface.frame() catch return;
+                callback.setListener(*OutputInfo, frameCallback, output);
+                output.state.?.frame_callback = callback;
+            }
             output.state.?.surface.commit();
         },
 
