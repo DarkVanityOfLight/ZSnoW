@@ -40,17 +40,6 @@ fn manageOutput(output: *OutputInfo, context: *Context) !void {
     output.state.?.layer_surface.setListener(*OutputInfo, layerSurfaceListener, output);
 
     output.state.?.surface.commit();
-    if (context.display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
-
-    // Need to attach buffer once to receive frame callbacks
-    output.attachCurrentBuffer();
-
-    // Init rendering via frame callback
-    // This callback exists once after that it will get destroyed and another starts
-    const callback = try output.state.?.surface.frame();
-    callback.setListener(*OutputInfo, frameCallback, output);
-
-    output.state.?.surface.commit();
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -132,12 +121,20 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, context: *
 }
 
 /// Listen to events of our layer surface
-// TODO: Pass context instead of running and set correct size
 fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Event, output: *OutputInfo) void {
     switch (event) {
         .configure => |configure| {
             std.log.debug("Received configure call for layer surface", .{});
             layer_surface.ackConfigure(configure.serial);
+
+            // Need to attach buffer once to receive frame callbacks
+            output.attachCurrentBuffer();
+
+            // Init rendering via frame callback
+            // This callback exists once after that it will get destroyed and another starts
+            const callback = output.state.?.surface.frame() catch return;
+            callback.setListener(*OutputInfo, frameCallback, output);
+            output.state.?.surface.commit();
         },
 
         .closed => {
