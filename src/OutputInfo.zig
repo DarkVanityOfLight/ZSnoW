@@ -14,6 +14,7 @@ const ActiveState = struct {
     input_region: *wl.Region,
     layer_surface: *zwlr.LayerSurfaceV1,
     doubleBuffer: DoubleBuffer,
+    frame_callback: ?*wl.Callback = null,
 };
 
 // Persistent
@@ -82,6 +83,10 @@ pub fn activate(self: *Self, context: *Context) !void {
 
 pub fn deactivate(self: *Self) void {
     if (self.state) |*s| {
+        if (s.frame_callback) |cb| {
+            cb.destroy();
+            s.frame_callback = null;
+        }
         s.doubleBuffer.deinit();
         s.input_region.destroy();
         s.layer_surface.destroy();

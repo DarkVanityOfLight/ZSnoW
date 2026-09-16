@@ -134,6 +134,7 @@ fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSu
             // This callback exists once after that it will get destroyed and another starts
             const callback = output.state.?.surface.frame() catch return;
             callback.setListener(*OutputInfo, frameCallback, output);
+            output.state.?.frame_callback = callback;
             output.state.?.surface.commit();
         },
 
@@ -195,6 +196,7 @@ fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputInfo
                 cb.destroy();
                 const cbN = s.surface.frame() catch return;
                 cbN.setListener(*OutputInfo, frameCallback, output);
+                output.state.?.frame_callback = cbN;
 
                 output.attachCurrentBuffer();
                 s.surface.damage(0, 0, std.math.maxInt(i32), std.math.maxInt(i32));
