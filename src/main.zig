@@ -171,9 +171,8 @@ fn outputListener(output: *wl.Output, event: wl.Output.Event, context: *Context)
         },
 
         .done => {
-            manageOutput( outputInfo, context)
-                catch {std.log.warn("Failed to manage output", .{}); return;};
-            std.log.info("Done managing output {s}, size is {}x{}", .{outputInfo.name, outputInfo.width, outputInfo.height});
+            outputInfo.applyConfiguration(context) catch {std.log.warn("Failed to configure output", .{}); return;};
+            std.log.info("Done managing output {s}, size is {}x{}", .{outputInfo.name orelse "unnamed", outputInfo.width, outputInfo.height});
         },
 
         else => {},

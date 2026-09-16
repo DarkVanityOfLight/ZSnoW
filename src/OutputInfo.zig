@@ -18,7 +18,7 @@ const ActiveState = struct {
 
 // Persistent
 output: *wl.Output,
-name: []const u8 = "",
+name: ?[]const u8 = null,
 uname: u32,
 flakes: snow.FlakeArray,
 // Defaultet
@@ -57,6 +57,7 @@ pub fn activate(self: *Self, context: *Context) !void {
     const surface = try compositor.createSurface();
     errdefer surface.destroy();
     const input_region = try compositor.createRegion();
+    errdefer input_region.destroy();
     surface.setInputRegion(input_region);
 
     // Make it a layer surface
@@ -66,25 +67,34 @@ pub fn activate(self: *Self, context: *Context) !void {
         zwlr.LayerShellV1.Layer.background,
         "ZSnoW",
     );
+    errdefer layer_surface.destroy();
     layer_surface.setSize(self.width, self.height);
 
     self.state = ActiveState{
         .surface = surface,
         .input_region = input_region,
         .layer_surface = layer_surface,
-        .doubleBuffer = try DoubleBuffer.init(context.io, self.width, self.height, self.name, shm),
+        .doubleBuffer = try DoubleBuffer.init(context.io, self.width, self.height, self.name.?, shm),
     };
 }
 
-pub fn deinit(self: *Self) void {
-    self.alloc.free(self.name);
-    self.flakes.deinit(self.alloc);
+pub fn deactivate(self: *Self) void {
     if (self.state) |*s| {
         s.doubleBuffer.deinit();
         s.input_region.destroy();
         s.layer_surface.destroy();
         s.surface.destroy();
+
+        self.state = null;
     }
+}
+
+pub fn deinit(self: *Self) void {
+    self.deactivate();
+
+    if (self.name) |name|
+        self.alloc.free(name);
+    self.flakes.deinit(self.alloc);
     self.output.destroy();
 }
 
@@ -96,4 +106,9 @@ pub fn setName(self: *Self, name: [*:0]const u8) void {
     const n = self.alloc.alloc(u8, std.mem.len(name)) catch return;
     @memcpy(n, name);
     self.name = n;
+}
+
+pub fn applyConfiguration(self: *Self, context: *Context) !void {
+    self.deactivate();
+    try self.activate(context);
 }
