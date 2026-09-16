@@ -90,24 +90,22 @@ fn zToColor(z: u8) u32 {
 }
 
 fn renderFlakeToBuffer(flake: *const flakes.Flake, m: []u32, width: u32) void {
-    var row_num: u32 = 0;
-
     const color = zToColor(flake.z);
     const coordinate = flake.normalizeCoordinates();
+    const height: u32 = @intCast(m.len / width);
 
-    for (flake.pattern.pattern) |row| {
-        var column_num: u32 = 0; // Reset column_num at the beginning of each row
-        for (row) |pv| {
-            if (pv) {
-                // Calculate the index in the buffer and ensure we are within bounds
-                const index = ((coordinate.y + row_num) * width) + (coordinate.x + column_num);
-                if (index < m.len) {
-                    //Shift alpha channel to its position and OR it with color white
-                    m[index] = color;
-                }
-            }
-            column_num += 1;
+    for (flake.pattern.pattern, 0..) |row, row_num| {
+        for (row, 0..) |pv, column_num| {
+            if (!pv) continue;
+
+            const x = coordinate.x + column_num;
+            const y = coordinate.y + row_num;
+
+            if (x >= width or y >= height) continue;
+
+            // Calculate the index in the buffer and ensure we are within bounds
+            const index = y * width + x;
+            m[index] = color;
         }
-        row_num += 1;
     }
 }
