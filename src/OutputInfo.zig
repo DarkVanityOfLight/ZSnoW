@@ -115,8 +115,8 @@ pub fn attachCurrentBuffer(self: *Self) void {
     self.state.?.doubleBuffer.attach(self.state.?.surface);
 }
 
-pub fn setName(self: *Self, name: [*:0]const u8) void {
-    const n = self.alloc.alloc(u8, std.mem.len(name)) catch return;
+pub fn setName(self: *Self, name: [*:0]const u8) !void {
+    const n = try self.alloc.alloc(u8, std.mem.len(name));
     @memcpy(n, name);
     self.name = n;
 }

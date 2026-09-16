@@ -172,7 +172,9 @@ fn outputListener(output: *wl.Output, event: wl.Output.Event, context: *Context)
         },
 
         .name => |name|{
-            outputInfo.setName(name.name);
+            outputInfo.setName(name.name) catch |err| {
+                std.log.warn("Failed to set name: {any}", .{err});
+            };
         },
 
         .done => {
