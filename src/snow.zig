@@ -82,11 +82,9 @@ fn zToColor(z: u8) u32 {
     const alpha: u32 = 255 - (@as(u32, z) / 2);
     const gray: u32 = 255 - (@as(u32, z) / 4);
 
-    const r = gray;
-    const g = gray;
-    const b = gray;
+    const premul = (gray * alpha) / 255;
 
-    return (alpha << 24) | (r << 16) | (g << 8) | b;
+    return (alpha << 24) | (premul << 16) | (premul << 8) | premul;
 }
 
 fn renderFlakeToBuffer(flake: *const flakes.Flake, m: []u32, width: u32) void {
