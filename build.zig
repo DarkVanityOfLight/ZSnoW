@@ -35,12 +35,12 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
     });
 
     exe.root_module.addImport("wayland", wayland);
-    exe.linkLibC();
-    exe.linkSystemLibrary("wayland-client");
+    exe.root_module.linkSystemLibrary("wayland-client", .{});
 
     //scanner.addCSource(exe);
 

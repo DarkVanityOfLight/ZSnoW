@@ -22,9 +22,10 @@ pub const Context = struct {
     shm: ?*wl.Shm,
     compositor: ?*wl.Compositor,
     layer_shell: ?*zwlr.LayerShellV1,
-    outputs: std.ArrayList(OutputInfo),
+    outputs: std.ArrayList(*OutputInfo),
     alloc: std.mem.Allocator,
     display: *wl.Display,
+    io: std.Io,
 };
 
 /// Initializes required fields in OutputInfo to manage an output
@@ -49,11 +50,8 @@ fn manageOutput(output: *OutputInfo, context: *Context) !void {
     output.state.?.surface.commit();
 }
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    const alloc = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const alloc = init.gpa;
 
     const display = try wl.Display.connect(null);
     const registry = try display.getRegistry();
@@ -66,7 +64,8 @@ pub fn main() !void {
         .layer_shell = null,
         .alloc = alloc,
         .display = display,
-        .outputs = try std.ArrayList(OutputInfo).initCapacity(alloc, 5),
+        .outputs = try std.ArrayList(*OutputInfo).initCapacity(alloc, 5),
+        .io = init.io,
     };
 
     registry.setListener(*Context, registryListener, &context);
@@ -80,8 +79,6 @@ pub fn main() !void {
     // Will never happen rn
     running = false;
     if (display.dispatch() != .SUCCESS) return error.Dispatchfailed;
-
-    _ = gpa.detectLeaks();
 }
 
 /// Listen to the registry events, to update collect what we need
@@ -101,20 +98,28 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, context: *
             } else if (mem.orderZ(u8, global.interface, wl.Output.interface.name) == .eq){
                 const output : *wl.Output = registry.bind(global.name, wl.Output, 4) catch return;
                 
-                const outputInfo = OutputInfo.init(context.alloc, output, global.name) 
+                const output_info = context.alloc.create(OutputInfo) catch return;
+                output_info.* = OutputInfo.init(context.alloc, context.io, output, global.name) 
                     catch { std.debug.print("Cannot create new output\n", .{}); return; };
-                context.outputs.append(context.alloc, outputInfo) catch return;
+
+                context.outputs.append(context.alloc, output_info) catch {
+                    output_info.deinit();
+                    context.alloc.destroy(output_info);
+                    return;
+                };
+
                 output.setListener(*Context, outputListener, context);
             }
         },
         .global_remove => |global_remove|{
             std.debug.print("Deregistering output: {}\n", .{global_remove.name});
             var i :usize= 0;
-            for (context.outputs.items) |*outputInfo|{
-                if(outputInfo.uname == global_remove.name){
+            for (context.outputs.items) |outputInfo|{
+                if(outputInfo.*.uname == global_remove.name){
                     _ = context.outputs.swapRemove(i);
-                    outputInfo.output.destroy();
+
                     outputInfo.deinit();
+                    context.alloc.destroy(outputInfo);
                     break;
                 }
                 i += 1;
@@ -143,8 +148,8 @@ fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSu
 
 fn outputListener(output: *wl.Output, event: wl.Output.Event, context: *Context) void {
     const outputInfo = blk: {
-        for (context.outputs.items) |*outputInfoIterated| {
-            if (output == outputInfoIterated.output) {
+        for (context.outputs.items) |outputInfoIterated| {
+            if (output == outputInfoIterated.*.output) {
                 break :blk outputInfoIterated;
             }
         }
@@ -211,6 +216,7 @@ fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputInfo
                 const render_init_flakes = output.missing_flakes + missing;
 
                 const missing_flakes = snow.spawnNewFlakes(
+                output.prng.random(),
                 &output.flakes,
                 output.alloc,
                 render_init_flakes,

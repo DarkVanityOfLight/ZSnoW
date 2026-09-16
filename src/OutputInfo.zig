@@ -27,17 +27,23 @@ width: u32 = 0,
 missing_flakes: u32 = 0,
 time: u32 = 0,
 running: bool = true,
+prng: std.Random.DefaultPrng,
 
 state: ?ActiveState = null,
 
 alloc: std.mem.Allocator,
 
-pub fn init(alloc: std.mem.Allocator, output: *wl.Output, uname: u32) !Self {
+pub fn init(alloc: std.mem.Allocator, io: std.Io, output: *wl.Output, uname: u32) !Self {
     return Self{
         .output = output,
         .alloc = alloc,
         .uname = uname,
         .flakes = std.ArrayList(*Flake).empty,
+        .prng = std.Random.DefaultPrng.init(blk: {
+            var seed: u64 = undefined;
+            io.random(std.mem.asBytes(&seed));
+            break :blk seed;
+        }),
     };
 }
 
@@ -66,7 +72,7 @@ pub fn activate(self: *Self, context: *Context) !void {
         .surface = surface,
         .input_region = input_region,
         .layer_surface = layer_surface,
-        .doubleBuffer = try DoubleBuffer.init(self.width, self.height, self.name, shm),
+        .doubleBuffer = try DoubleBuffer.init(context.io, self.width, self.height, self.name, shm),
     };
 }
 

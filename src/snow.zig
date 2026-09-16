@@ -8,30 +8,24 @@ fn clearBuffer(buffer_mem: []u32) void {
 }
 
 // Float flakes
-pub fn generateRandomFlake(outputWidth: u32, alloc: std.mem.Allocator) !*flakes.Flake {
-    var rand = std.Random.DefaultPrng.init(blk: {
-        var seed: u64 = 40315527606673217;
-        _ = std.posix.getrandom(std.mem.asBytes(&seed)) catch break :blk seed;
-        break :blk seed;
-    });
-
-    const flake_int = rand.random().uintAtMost(u8, flakes.FlakePatterns.len - 1);
+pub fn generateRandomFlake(rand: std.Random, outputWidth: u32, alloc: std.mem.Allocator) !*flakes.Flake {
+    const flake_int = rand.uintAtMost(u8, flakes.FlakePatterns.len - 1);
 
     const pattern = flakes.FlakePatterns[flake_int];
     const flake = try alloc.create(flakes.Flake);
 
-    const raw_exp = rand.random().floatExp(f64);
+    const raw_exp = rand.floatExp(f64);
     const normalized_exp = std.math.clamp(raw_exp / 3.0, 0.0, 1.0); // Scale and normalize
     const dy = 0.1 + normalized_exp * (0.3 - 0.1); // Map to [0.1, 0.3]
 
     flake.* = try flakes.Flake.init(
         pattern,
-        @floatFromInt(rand.random().uintAtMost(u32, outputWidth)),
+        @floatFromInt(rand.uintAtMost(u32, outputWidth)),
         0,
-        std.math.clamp(rand.random().int(u8), 0, 250),
+        std.math.clamp(rand.int(u8), 0, 250),
         dy,
         0,
-        rand.random().uintAtMost(usize, (pattern.maxScale orelse 1)),
+        rand.uintAtMost(usize, (pattern.maxScale orelse 1)),
         alloc,
     );
 
@@ -68,17 +62,11 @@ pub fn renderFlakes(flakeArray: *FlakeArray, buffer_mem: []u32, outputWidth: u32
     }
 }
 
-pub fn spawnNewFlakes(flakeArray: *FlakeArray, alloc: std.mem.Allocator, i: u32, outputWidth: u32) !u32 {
-    var rand = std.Random.DefaultPrng.init(blk: {
-        var seed: u64 = undefined;
-        _ = std.posix.getrandom(std.mem.asBytes(&seed)) catch null;
-        break :blk seed;
-    });
-
+pub fn spawnNewFlakes(rand: std.Random, flakeArray: *FlakeArray, alloc: std.mem.Allocator, i: u32, outputWidth: u32) !u32 {
     var j = i;
     for (0..i) |_| {
-        if (rand.random().uintAtMost(u16, 1000) >= 999) {
-            const flake = try generateRandomFlake(outputWidth, alloc);
+        if (rand.uintAtMost(u16, 1000) >= 999) {
+            const flake = try generateRandomFlake(rand, outputWidth, alloc);
             try flakeArray.append(alloc, flake);
             j -= 1;
         }
