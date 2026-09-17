@@ -17,39 +17,37 @@ pub fn requestFrame(output: *OutputState) !void {
 }
 
 fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputState) void {
-    switch (event) {
-        .done => {
-            if (!output.info.running) return;
+    if (!output.info.running) return;
 
-            if (output.activeState) |*s| {
-                // Handle future callbacks
-                s.frame_callback = null;
-                cb.destroy();
+    if (output.activeState) |*s| {
+        // Handle future callbacks
+        s.frame_callback = null;
+        cb.destroy();
 
-                output.attachCurrentBuffer();
-                s.surface.damage(0, 0, std.math.maxInt(i32), std.math.maxInt(i32));
+        // Calculate time between callbacks
+        const currentTimeInMs = event.done.callback_data;
+        const timeDelta = currentTimeInMs -% (output.info.time);
+        output.info.time = currentTimeInMs;
 
-                requestFrame(output) catch |err| {
-                    std.log.err("Cannot schedule animation frame: {s}", .{@errorName(err)});
-                    output.info.running = false;
-                    return;
-                };
+        output.snowSystem.update(output.info.width, output.info.height, timeDelta);
 
-                s.surface.commit();
+        // Work on the next frame if buffer is free
+        if (s.doubleBuffer.swap())
+            snow.renderFlakes(
+                &output.snowSystem.flakes,
+                s.doubleBuffer.mem(),
+                output.info.width,
+            ) catch return;
 
-                // Calculate time between callbacks
-                const currentTimeInMs = event.done.callback_data;
-                const timeDelta = currentTimeInMs -% (output.info.time);
-                output.info.time = currentTimeInMs;
+        output.attachCurrentBuffer();
+        s.surface.damage(0, 0, @intCast(output.info.width), @intCast(output.info.height));
 
-                output.snowSystem.update(output.info.width, output.info.height, timeDelta);
+        requestFrame(output) catch |err| {
+            std.log.err("Cannot schedule animation frame: {s}", .{@errorName(err)});
+            output.info.running = false;
+            return;
+        };
 
-                // Work on the next frame if buffer is free
-                if (!s.doubleBuffer.swap())
-                    return;
-
-                snow.renderFlakes(&output.snowSystem.flakes, s.doubleBuffer.mem(), output.info.width) catch return;
-            } else std.log.warn("Trying to render unitialized output", .{});
-        },
-    }
+        s.surface.commit();
+    } else std.log.warn("Trying to render unitialized output", .{});
 }
