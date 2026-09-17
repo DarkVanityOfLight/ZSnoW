@@ -3,14 +3,9 @@ const mem = std.mem;
 
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
-const xdg = wayland.client.xdg;
 const zwlr = wayland.client.zwlr;
 
-const flakes = @import("flakes/flake.zig");
 const snow = @import("snow.zig");
-const DoubleBuffer = @import("DoubleBuffer.zig");
-const OutputInfo = @import("OutputInfo.zig");
-const SnowSystem = @import("SnowSystem.zig");
 const OutputState = @import("OutputState.zig");
 
 pub const std_options: std.Options = .{
@@ -25,8 +20,18 @@ pub const Context = struct {
     layer_shell: ?*zwlr.LayerShellV1,
     outputs: std.ArrayList(*OutputState),
     alloc: std.mem.Allocator,
-    display: *wl.Display,
     io: std.Io,
+
+    fn deinit(self: *Context) void {
+        for (self.outputs.items) |output| {
+            output.deinit();
+            self.alloc.destroy(output);
+        }
+        self.outputs.deinit(self.alloc);
+        if (self.layer_shell) |shell| shell.destroy();
+        if (self.shm) |shm| shm.destroy();
+        if (self.compositor) |compositor| compositor.destroy();
+    }
 };
 
 /// Initializes required fields in OutputInfo to manage an output
@@ -47,19 +52,20 @@ pub fn main(init: std.process.Init) !void {
     const alloc = init.gpa;
 
     const display = try wl.Display.connect(null);
+    defer display.disconnect();
     const registry = try display.getRegistry();
-
-    var running = true;
+    defer registry.destroy();
 
     var context = Context{
         .shm = null,
         .compositor = null,
         .layer_shell = null,
         .alloc = alloc,
-        .display = display,
         .outputs = try std.ArrayList(*OutputState).initCapacity(alloc, 5),
         .io = init.io,
     };
+
+    defer context.deinit();
 
     registry.setListener(*Context, registryListener, &context);
 
@@ -68,10 +74,6 @@ pub fn main(init: std.process.Init) !void {
 
     // Keep running
     while (true) if (display.dispatch() != .SUCCESS) return error.Dispatchfailed;
-
-    // Will never happen rn
-    running = false;
-    if (display.dispatch() != .SUCCESS) return error.Dispatchfailed;
 }
 
 fn isInterface(interface: [*:0]const u8, comptime T: type) bool {
@@ -83,26 +85,16 @@ fn addOutput(
     registry: *wl.Registry,
     name: u32,
 ) !void {
-    const output = try registry.bind(name, wl.Output, 4);
-    errdefer output.release();
-
-    const info = try OutputInfo.init(
-        context.alloc,
-        output,
-        name,
-    );
-
-    const snow_system = try SnowSystem.init(context.alloc, context.io, nFlakes);
-
+    // Reserve the list entry before acquiring resources so registration cannot
+    // fail after ownership has transferred to OutputState.
+    try context.outputs.ensureUnusedCapacity(context.alloc, 1);
     const outputState = try context.alloc.create(OutputState);
-    outputState.* = .{
-        .info = info,
-        .snowSystem = snow_system,
-        .activeState = null,
-    };
     errdefer context.alloc.destroy(outputState);
 
-    try context.outputs.append(context.alloc, outputState);
+    const output = try registry.bind(name, wl.Output, 4);
+    errdefer output.release();
+    outputState.* = try OutputState.init(context.alloc, context.io, output, name, nFlakes);
+    context.outputs.appendAssumeCapacity(outputState);
 
     output.setListener(*Context, outputListener, context);
 }
@@ -170,7 +162,7 @@ fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSu
 
         .closed => {
             std.log.info("Received closing call", .{});
-            output.info.running = false;
+            output.deactivate();
         }
 
     }
@@ -261,25 +253,7 @@ fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputStat
                 const timeDelta = currentTimeInMs -% (output.info.time);
                 output.info.time = currentTimeInMs;
 
-                const removed = snow.updateFlakes(
-                &output.snowSystem.flakes,
-                output.info.alloc,
-                output.info.height,
-                timeDelta);
-                const render_init_flakes = output.snowSystem.missing_flakes + removed;
-
-                const missing_flakes = snow.spawnNewFlakes(
-                output.snowSystem.prng.random(),
-                &output.snowSystem.flakes,
-                output.info.alloc,
-                render_init_flakes,
-                output.info.width,
-                ) catch |err| blk: {
-                    std.log.warn("Could not calculate missing flakes {any}", .{err});
-                    break :blk 0;    
-                };
-                output.snowSystem.missing_flakes = missing_flakes;
-
+                output.snowSystem.update(output.info.width, output.info.height, timeDelta);
 
                 // Work on the next frame if buffer is free
                 if (!s.doubleBuffer.swap()) 

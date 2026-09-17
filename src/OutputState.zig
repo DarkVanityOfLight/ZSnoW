@@ -1,3 +1,4 @@
+const std = @import("std");
 const OutputInfo = @import("OutputInfo.zig");
 const SnowSystem = @import("SnowSystem.zig");
 const DoubleBuffer = @import("DoubleBuffer.zig");
@@ -5,7 +6,6 @@ const Context = @import("main.zig").Context;
 
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
-const xdg = wayland.client.xdg;
 const zwlr = wayland.client.zwlr;
 
 const Self = @This();
@@ -22,7 +22,18 @@ info: OutputInfo,
 snowSystem: SnowSystem,
 activeState: ?ActiveState = null,
 
+/// Takes ownership of output only on success. Keep this state at a stable
+/// address once activated: Wayland listeners refer to it and its buffers.
+pub fn init(alloc: std.mem.Allocator, io: std.Io, output: *wl.Output, name: u32, flake_count: u32) !Self {
+    return .{
+        .info = OutputInfo.init(alloc, output, name),
+        .snowSystem = try SnowSystem.init(alloc, io, flake_count),
+    };
+}
+
 pub fn activate(self: *Self, context: *Context) !void {
+    std.debug.assert(self.activeState == null);
+
     // Create backed memory
     const shm = context.shm orelse return error.NoWlShm;
     const compositor = context.compositor orelse return error.NoWlCompositor;
@@ -56,7 +67,7 @@ pub fn activate(self: *Self, context: *Context) !void {
             context.io,
             self.info.width,
             self.info.height,
-            self.info.name.?,
+            self.info.name orelse "ZSnoW",
             shm,
         ),
     };
@@ -65,6 +76,7 @@ pub fn activate(self: *Self, context: *Context) !void {
 }
 
 pub fn deactivate(self: *Self) void {
+    self.info.running = false;
     if (self.activeState) |*s| {
         if (s.frame_callback) |cb| {
             cb.destroy();

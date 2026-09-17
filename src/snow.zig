@@ -63,7 +63,7 @@ pub fn renderFlakes(flakeArray: *FlakeArray, buffer_mem: []u32, outputWidth: u32
     }
 }
 
-pub fn spawnNewFlakes(rand: std.Random, flakeArray: *FlakeArray, alloc: std.mem.Allocator, i: u32, outputWidth: u32) !u32 {
+pub fn spawnNewFlakes(rand: std.Random, flakeArray: *FlakeArray, alloc: std.mem.Allocator, i: u32, outputWidth: u32) u32 {
     var j = i;
     for (0..i) |_| {
         if (rand.uintAtMost(u16, 1000) >= 999) {

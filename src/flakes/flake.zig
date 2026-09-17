@@ -186,8 +186,12 @@ pub fn scalePattern(flakePattern: FlakePattern, scaleX: usize, scaleY: usize, al
 
     // Allocate the new pattern (ySize x xSize)
     const newPattern = try alloc.alloc([]bool, ySize);
+    errdefer alloc.free(newPattern);
+    var initialized: usize = 0;
+    errdefer for (newPattern[0..initialized]) |row| alloc.free(row);
     for (0..ySize) |i| {
         newPattern[i] = try alloc.alloc(bool, xSize);
+        initialized += 1;
     }
 
     // Fill the new pattern with scaled values
@@ -224,6 +228,33 @@ test "test scaling" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     const allocator = arena.allocator();
     const scaledPattern = try scalePattern(flake0, 2, 2, allocator);
-    printPattern(scaledPattern);
     defer arena.deinit();
+    try std.testing.expectEqual(@as(u16, 6), scaledPattern.x_size);
+    try std.testing.expectEqual(@as(u16, 6), scaledPattern.y_size);
+    for (scaledPattern.pattern, 0..) |row, y| {
+        for (row, 0..) |pixel, x| {
+            try std.testing.expectEqual(flake0.pattern[y / 2][x / 2], pixel);
+        }
+    }
+}
+
+fn checkScalingAllocations(alloc: std.mem.Allocator) !void {
+    const pattern = try scalePattern(flake0, 3, 2, alloc);
+    defer alloc.free(pattern.pattern);
+    defer for (pattern.pattern) |row| alloc.free(row);
+    try std.testing.expectEqual(@as(u16, 9), pattern.x_size);
+    try std.testing.expectEqual(@as(u16, 6), pattern.y_size);
+}
+
+test "scaling cleans up partial allocations" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, checkScalingAllocations, .{});
+}
+
+fn checkFlakeAllocations(alloc: std.mem.Allocator) !void {
+    const flake = try Flake.init(&flake0, 0, 0, 0, 0.1, 0, 3, alloc);
+    defer flake.deinit();
+}
+
+test "flake initialization cleans up allocation failures" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, checkFlakeAllocations, .{});
 }
