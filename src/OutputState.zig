@@ -2,7 +2,7 @@ const std = @import("std");
 const OutputInfo = @import("OutputInfo.zig");
 const SnowSystem = @import("SnowSystem.zig");
 const DoubleBuffer = @import("DoubleBuffer.zig");
-const Context = @import("main.zig").Context;
+const Context = @import("waylandsetup.zig").Context;
 
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
