@@ -19,36 +19,27 @@ const ActiveState = struct {
 
 // Persistent
 output: *wl.Output,
-name: ?[]const u8 = null,
 uname: u32,
-flakes: snow.FlakeArray,
 // Defaultet
 height: u32 = 0,
 width: u32 = 0,
 mode_height: u32 = 0,
 mode_width: u32 = 0,
 swap_dimensions: bool = false,
-missing_flakes: u32 = 0,
 time: u32 = 0,
 running: bool = true,
-prng: std.Random.DefaultPrng,
 scale: i32 = 1,
+name: ?[]const u8 = null,
 
 state: ?ActiveState = null,
 
 alloc: std.mem.Allocator,
 
-pub fn init(alloc: std.mem.Allocator, io: std.Io, output: *wl.Output, uname: u32) !Self {
+pub fn init(alloc: std.mem.Allocator, output: *wl.Output, uname: u32) !Self {
     return Self{
         .output = output,
         .alloc = alloc,
         .uname = uname,
-        .flakes = std.ArrayList(*Flake).empty,
-        .prng = std.Random.DefaultPrng.init(blk: {
-            var seed: u64 = undefined;
-            io.random(std.mem.asBytes(&seed));
-            break :blk seed;
-        }),
     };
 }
 
@@ -109,12 +100,6 @@ pub fn deinit(self: *Self) void {
     if (self.name) |name|
         self.alloc.free(name);
 
-    for (self.flakes.items) |flake| {
-        flake.deinit();
-        self.alloc.destroy(flake);
-    }
-    self.flakes.deinit(self.alloc);
-
     self.output.destroy();
 }
 
@@ -131,14 +116,4 @@ pub fn setName(self: *Self, name: [*:0]const u8) !void {
 pub fn applyConfiguration(self: *Self, context: *Context) !void {
     self.deactivate();
     try self.activate(context);
-}
-
-pub fn resetFlakesTo(self: *Self, nFlakes: u32) void {
-    for (self.flakes.items) |flake| {
-        flake.deinit();
-        self.alloc.destroy(flake);
-    }
-
-    self.flakes.clearRetainingCapacity();
-    self.missing_flakes = nFlakes;
 }

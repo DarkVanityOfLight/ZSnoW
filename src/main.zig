@@ -1,6 +1,5 @@
 const std = @import("std");
 const mem = std.mem;
-const posix = std.posix;
 
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
@@ -11,6 +10,7 @@ const flakes = @import("flakes/flake.zig");
 const snow = @import("snow.zig");
 const DoubleBuffer = @import("DoubleBuffer.zig");
 const OutputInfo = @import("OutputInfo.zig");
+const SnowSystem = @import("SnowSystem.zig");
 
 pub const std_options: std.Options = .{
     .log_level = .debug,
@@ -22,24 +22,29 @@ pub const Context = struct {
     shm: ?*wl.Shm,
     compositor: ?*wl.Compositor,
     layer_shell: ?*zwlr.LayerShellV1,
-    outputs: std.ArrayList(*OutputInfo),
+    outputs: std.ArrayList(*OutputState),
     alloc: std.mem.Allocator,
     display: *wl.Display,
     io: std.Io,
 };
 
-/// Initializes required fields in OutputInfo to manage an output
-fn manageOutput(output: *OutputInfo, context: *Context) !void {
-    // Deactivate old if exists
-    output.deactivate();
-    try output.activate(context);
+const OutputState = struct {
+    info: *OutputInfo,
+    snowSystem: *SnowSystem,
+};
 
-    output.resetFlakesTo(nFlakes);
+/// Initializes required fields in OutputInfo to manage an output
+fn manageOutput(output: *OutputState, context: *Context) !void {
+    // Deactivate old if exists
+    output.info.deactivate();
+    try output.info.activate(context);
+
+    output.snowSystem.resetFlakesTo(nFlakes);
 
     // Listen for configure and kill calls
-    output.state.?.layer_surface.setListener(*OutputInfo, layerSurfaceListener, output);
+    output.info.state.?.layer_surface.setListener(*OutputState, layerSurfaceListener, output);
 
-    output.state.?.surface.commit();
+    output.info.state.?.surface.commit();
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -56,7 +61,7 @@ pub fn main(init: std.process.Init) !void {
         .layer_shell = null,
         .alloc = alloc,
         .display = display,
-        .outputs = try std.ArrayList(*OutputInfo).initCapacity(alloc, 5),
+        .outputs = try std.ArrayList(*OutputState).initCapacity(alloc, 5),
         .io = init.io,
     };
 
@@ -90,19 +95,28 @@ fn addOutput(
 
     info.* = try OutputInfo.init(
         context.alloc,
-        context.io,
         output,
         name,
     );
     errdefer info.deinit();
 
-    try context.outputs.append(context.alloc, info);
+    const snowParticles = try SnowSystem.init(context.alloc, context.io, nFlakes);
+
+    const outputState = try context.alloc.create(OutputState);
+    outputState.* = .{
+        .info = info,
+        .snowSystem = snowParticles,
+    };
+    errdefer context.alloc.destroy(outputState);
+
+    try context.outputs.append(context.alloc, outputState);
 
     output.setListener(*Context, outputListener, context);
 }
 
 fn removeOutput(context: *Context, name: u32) void {
-    for (context.outputs.items, 0..) |info, i| {
+    for (context.outputs.items, 0..) |state, i| {
+        const info = state.info;
         if (info.uname != name)
             continue;
 
@@ -142,28 +156,28 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, context: *
 }
 
 /// Listen to events of our layer surface
-fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Event, output: *OutputInfo) void {
+fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Event, output: *OutputState) void {
     switch (event) {
         .configure => |configure| {
             std.log.debug("Received configure call for layer surface", .{});
             layer_surface.ackConfigure(configure.serial);
 
             // Need to attach buffer once to receive frame callbacks
-            output.attachCurrentBuffer();
+            output.info.attachCurrentBuffer();
 
-            if(output.state.?.frame_callback == null) {
+            if(output.info.state.?.frame_callback == null) {
                 // Init rendering via frame callback
                 // This callback exists once after that it will get destroyed and another starts
-                const callback = output.state.?.surface.frame() catch return;
-                callback.setListener(*OutputInfo, frameCallback, output);
-                output.state.?.frame_callback = callback;
+                const callback = output.info.state.?.surface.frame() catch return;
+                callback.setListener(*OutputState, frameCallback, output);
+                output.info.state.?.frame_callback = callback;
             }
-            output.state.?.surface.commit();
+            output.info.state.?.surface.commit();
         },
 
         .closed => {
             std.log.info("Received closing call", .{});
-            output.running = false;
+            output.info.running = false;
         }
 
     }
@@ -171,15 +185,16 @@ fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSu
 }
 
 fn outputListener(output: *wl.Output, event: wl.Output.Event, context: *Context) void {
-    const outputInfo = blk: {
-        for (context.outputs.items) |outputInfoIterated| {
-            if (output == outputInfoIterated.*.output) {
-                break :blk outputInfoIterated;
+    const outputState = blk: {
+        for (context.outputs.items) |outputStateIterated| {
+            if (output == outputStateIterated.info.output) {
+                break :blk outputStateIterated;
             }
         }
         std.log.warn("Received unmanaged output", .{});
         return;
     };
+    const outputInfo = outputState.info;
 
     // std.debug.print("Info {?}\n", .{outputInfoNull});
 
@@ -213,7 +228,7 @@ fn outputListener(output: *wl.Output, event: wl.Output.Event, context: *Context)
             // Derive dimensions from the mode once all output events have arrived.
             outputInfo.width = if (outputInfo.swap_dimensions) outputInfo.mode_height else outputInfo.mode_width;
             outputInfo.height = if (outputInfo.swap_dimensions) outputInfo.mode_width else outputInfo.mode_height;
-            manageOutput(outputInfo, context) catch {std.log.warn("Failed to configure output", .{}); return;};
+            manageOutput(outputState, context) catch {std.log.warn("Failed to configure output", .{}); return;};
             std.log.info("Done managing output {s}, size is {}x{}", .{outputInfo.name orelse "unnamed", outputInfo.width, outputInfo.height});
         },
 
@@ -225,52 +240,52 @@ fn outputListener(output: *wl.Output, event: wl.Output.Event, context: *Context)
 }
 
 
-fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputInfo) void{
+fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputState) void{
     switch(event){
         .done => {
-            if (!output.running) return;
+            if (!output.info.running) return;
 
-            if (output.state) |*s|{
+            if (output.info.state) |*s|{
                 // Handle future callbacks
                 s.frame_callback = null;
                 cb.destroy();
 
                 const cbN = s.surface.frame() catch |err| {
                     std.log.err("Cannot schedule animation frame: {s}", .{@errorName(err)});
-                    output.running = false;
+                    output.info.running = false;
                     return;
                 };
 
-                cbN.setListener(*OutputInfo, frameCallback, output);
+                cbN.setListener(*OutputState, frameCallback, output);
                 s.frame_callback = cbN;
 
-                output.attachCurrentBuffer();
+                output.info.attachCurrentBuffer();
                 s.surface.damage(0, 0, std.math.maxInt(i32), std.math.maxInt(i32));
                 s.surface.commit();
 
                 // Calculate time between callbacks
                 const currentTimeInMs = event.done.callback_data;
-                const timeDelta = currentTimeInMs -% (output.time);
-                output.time = currentTimeInMs;
+                const timeDelta = currentTimeInMs -% (output.info.time);
+                output.info.time = currentTimeInMs;
 
                 const removed = snow.updateFlakes(
-                &output.flakes,
-                output.alloc,
-                output.height,
+                &output.snowSystem.flakes,
+                output.info.alloc,
+                output.info.height,
                 timeDelta);
-                const render_init_flakes = output.missing_flakes + removed;
+                const render_init_flakes = output.snowSystem.missing_flakes + removed;
 
                 const missing_flakes = snow.spawnNewFlakes(
-                output.prng.random(),
-                &output.flakes,
-                output.alloc,
+                output.snowSystem.prng.random(),
+                &output.snowSystem.flakes,
+                output.info.alloc,
                 render_init_flakes,
-                output.width,
+                output.info.width,
                 ) catch |err| blk: {
                     std.log.warn("Could not calculate missing flakes {any}", .{err});
                     break :blk 0;    
                 };
-                output.missing_flakes = missing_flakes;
+                output.snowSystem.missing_flakes = missing_flakes;
 
 
                 // Work on the next frame if buffer is free
@@ -278,9 +293,9 @@ fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputInfo
                     return;
 
                 snow.renderFlakes(
-                &output.flakes,
+                &output.snowSystem.flakes,
                 s.doubleBuffer.mem(),
-                output.width)
+                output.info.width)
                 catch return;
             } else std.log.warn("Trying to render unitialized output", .{});
         }
