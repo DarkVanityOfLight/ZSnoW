@@ -11,6 +11,7 @@ const snow = @import("snow.zig");
 const DoubleBuffer = @import("DoubleBuffer.zig");
 const OutputInfo = @import("OutputInfo.zig");
 const SnowSystem = @import("SnowSystem.zig");
+const OutputState = @import("OutputState.zig");
 
 pub const std_options: std.Options = .{
     .log_level = .debug,
@@ -28,23 +29,18 @@ pub const Context = struct {
     io: std.Io,
 };
 
-const OutputState = struct {
-    info: *OutputInfo,
-    snowSystem: *SnowSystem,
-};
-
 /// Initializes required fields in OutputInfo to manage an output
 fn manageOutput(output: *OutputState, context: *Context) !void {
     // Deactivate old if exists
-    output.info.deactivate();
-    try output.info.activate(context);
+    output.deactivate();
+    try output.activate(context);
 
     output.snowSystem.resetFlakesTo(nFlakes);
 
     // Listen for configure and kill calls
-    output.info.state.?.layer_surface.setListener(*OutputState, layerSurfaceListener, output);
+    output.activeState.?.layer_surface.setListener(*OutputState, layerSurfaceListener, output);
 
-    output.info.state.?.surface.commit();
+    output.activeState.?.surface.commit();
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -90,22 +86,19 @@ fn addOutput(
     const output = try registry.bind(name, wl.Output, 4);
     errdefer output.release();
 
-    const info = try context.alloc.create(OutputInfo);
-    errdefer context.alloc.destroy(info);
-
-    info.* = try OutputInfo.init(
+    const info = try OutputInfo.init(
         context.alloc,
         output,
         name,
     );
-    errdefer info.deinit();
 
-    const snowParticles = try SnowSystem.init(context.alloc, context.io, nFlakes);
+    const snow_system = try SnowSystem.init(context.alloc, context.io, nFlakes);
 
     const outputState = try context.alloc.create(OutputState);
     outputState.* = .{
         .info = info,
-        .snowSystem = snowParticles,
+        .snowSystem = snow_system,
+        .activeState = null,
     };
     errdefer context.alloc.destroy(outputState);
 
@@ -122,8 +115,8 @@ fn removeOutput(context: *Context, name: u32) void {
 
         _ = context.outputs.swapRemove(i);
 
-        info.deinit();
-        context.alloc.destroy(info);
+        state.deinit();
+        context.alloc.destroy(state);
         return;
     }
 }
@@ -163,16 +156,16 @@ fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSu
             layer_surface.ackConfigure(configure.serial);
 
             // Need to attach buffer once to receive frame callbacks
-            output.info.attachCurrentBuffer();
+            output.attachCurrentBuffer();
 
-            if(output.info.state.?.frame_callback == null) {
+            if(output.activeState.?.frame_callback == null) {
                 // Init rendering via frame callback
                 // This callback exists once after that it will get destroyed and another starts
-                const callback = output.info.state.?.surface.frame() catch return;
+                const callback = output.activeState.?.surface.frame() catch return;
                 callback.setListener(*OutputState, frameCallback, output);
-                output.info.state.?.frame_callback = callback;
+                output.activeState.?.frame_callback = callback;
             }
-            output.info.state.?.surface.commit();
+            output.activeState.?.surface.commit();
         },
 
         .closed => {
@@ -194,7 +187,7 @@ fn outputListener(output: *wl.Output, event: wl.Output.Event, context: *Context)
         std.log.warn("Received unmanaged output", .{});
         return;
     };
-    const outputInfo = outputState.info;
+    const outputInfo = &outputState.info;
 
     // std.debug.print("Info {?}\n", .{outputInfoNull});
 
@@ -245,7 +238,7 @@ fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputStat
         .done => {
             if (!output.info.running) return;
 
-            if (output.info.state) |*s|{
+            if (output.activeState) |*s|{
                 // Handle future callbacks
                 s.frame_callback = null;
                 cb.destroy();
@@ -259,7 +252,7 @@ fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputStat
                 cbN.setListener(*OutputState, frameCallback, output);
                 s.frame_callback = cbN;
 
-                output.info.attachCurrentBuffer();
+                output.attachCurrentBuffer();
                 s.surface.damage(0, 0, std.math.maxInt(i32), std.math.maxInt(i32));
                 s.surface.commit();
 
