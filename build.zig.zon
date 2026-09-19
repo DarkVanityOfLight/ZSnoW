@@ -28,6 +28,10 @@
             .url = "git+https://github.com/ifreund/zig-wayland#23839e41161de025d71ce082561ecba1c5331281",
             .hash = "wayland-0.7.0-dev-lQa1kl38AQC-kQolS5D4jV1GJ2rH2jv1VWHr14YLVnyn",
         },
+        .zli = .{
+            .url = "https://github.com/xcaeser/zli/archive/v5.1.3.tar.gz",
+            .hash = "zli-5.1.3-LeUjpvkHAQCYj3r-wgQ2r1Gdkk-S61EFABfsXHP5Q4CH",
+        },
     },
     .paths = .{
         "build.zig",

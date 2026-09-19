@@ -16,6 +16,7 @@ const ActiveState = struct {
     layer_surface: *zwlr.LayerSurfaceV1,
     doubleBuffer: DoubleBuffer,
     frame_callback: ?*wl.Callback = null,
+    configured: bool,
 };
 
 info: OutputInfo,
@@ -70,6 +71,7 @@ pub fn activate(self: *Self, context: *Context) !void {
             self.info.name orelse "ZSnoW",
             shm,
         ),
+        .configured = false,
     };
     self.info.running = true;
     self.activeState.?.doubleBuffer.listen();

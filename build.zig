@@ -42,6 +42,9 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("wayland", wayland);
     exe.root_module.linkSystemLibrary("wayland-client", .{});
 
+    const zli_dep = b.dependency("zli", .{ .target = target, .optimize = optimize });
+    exe.root_module.addImport("zli", zli_dep.module("zli"));
+
     //scanner.addCSource(exe);
 
     // This declares intent for the executable to be installed into the
