@@ -5,12 +5,13 @@ const Self = @This();
 
 pub const Settings = struct {
     speed: f32 = 1.0,
-    nFlakes: u32,
+    nFlakes: usize = 200,
+    scale: usize = 1,
 };
 
 flakes: snow.FlakeArray,
 prng: std.Random.DefaultPrng,
-missing_flakes: u32,
+missing_flakes: usize,
 alloc: std.mem.Allocator,
 settings: Settings,
 
@@ -32,7 +33,7 @@ pub fn resetFlakes(self: *Self) void {
     self.resetFlakesTo(self.settings.nFlakes);
 }
 
-fn resetFlakesTo(self: *Self, to: u32) void {
+fn resetFlakesTo(self: *Self, to: usize) void {
     for (self.flakes.items) |flake| {
         flake.deinit();
         self.alloc.destroy(flake);
@@ -44,13 +45,19 @@ fn resetFlakesTo(self: *Self, to: u32) void {
 
 pub fn update(self: *Self, width: u32, height: u32, time_delta: u32) void {
     const scaled_delta = @as(f64, @floatFromInt(time_delta)) * self.settings.speed;
-    const removed = snow.updateFlakes(&self.flakes, self.alloc, height, scaled_delta);
+    const removed: usize = snow.updateFlakes(
+        &self.flakes,
+        self.alloc,
+        height,
+        scaled_delta,
+    );
     self.missing_flakes = snow.spawnNewFlakes(
         self.prng.random(),
         &self.flakes,
         self.alloc,
         self.missing_flakes + removed,
         width,
+        self.settings.scale,
     );
 }
 

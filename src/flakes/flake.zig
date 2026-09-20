@@ -127,7 +127,12 @@ pub const Flake = struct {
         const arenaAlloc = arena.allocator();
         const scaledPattern = try arenaAlloc.create(FlakePattern);
         if ((scale orelse 0) > 1) {
-            scaledPattern.* = try scalePattern(pattern.*, scale.?, scale.?, arenaAlloc);
+            scaledPattern.* = try scalePattern(
+                pattern.*,
+                scale.?,
+                scale.?,
+                arenaAlloc,
+            );
         } else {
             scaledPattern.* = pattern.*;
         }

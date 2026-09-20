@@ -10,7 +10,8 @@ const Self = @This();
 
 ignored_outputs: std.mem.TokenIterator(u8, .scalar),
 speed_multiplier: f32,
-nFlakes: u32 = 200,
+nFlakes: usize = 200,
+scale: usize = 1,
 
 pub fn parseCli(ctx: CommandContext) !Self {
     const s = ctx.flag("ignore", []const u8);
@@ -19,12 +20,15 @@ pub fn parseCli(ctx: CommandContext) !Self {
     const speed_multiplier_s = ctx.flag("speed", []const u8);
     const speed_multiplier = try std.fmt.parseFloat(f32, speed_multiplier_s);
 
-    const nFlakes = ctx.flag("nFlakes", u32);
+    const nFlakes = ctx.flag("nFlakes", usize);
+
+    const scale = ctx.flag("scale", usize);
 
     return .{
         .ignored_outputs = outputs,
         .speed_multiplier = speed_multiplier,
         .nFlakes = nFlakes,
+        .scale = scale,
     };
 }
 
@@ -76,6 +80,13 @@ pub fn cliSetup(io: std.Io, gpa: std.mem.Allocator, execFn: ExecFn) !*zli.Comman
         .default_value = .{ .Int = 200 },
     });
 
+    try root.addFlag(.{
+        .name = "scale",
+        .description = "Flake size multiplier",
+        .type = .Int,
+        .default_value = .{ .Int = 1 },
+    });
+
     try root.addCommands(&.{});
     return root;
 }
@@ -84,5 +95,6 @@ pub fn makeSnowSettings(self: *Self) SnowSettings {
     return .{
         .speed = self.speed_multiplier,
         .nFlakes = self.nFlakes,
+        .scale = self.scale,
     };
 }
