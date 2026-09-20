@@ -1,5 +1,4 @@
 const std = @import("std");
-const mem = std.mem;
 
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
@@ -28,6 +27,34 @@ config: Config,
 alloc: std.mem.Allocator,
 io: std.Io,
 
+//Helpers
+fn isInterface(interface: [*:0]const u8, comptime T: type) bool {
+    return std.mem.orderZ(u8, interface, T.interface.name) == .eq;
+}
+
+fn isIgnored(
+    outputName: [*:0]const u8,
+    outputs: std.mem.TokenIterator(u8, .scalar),
+) bool {
+    var iter = outputs;
+    while (iter.next()) |candidate| {
+        if (std.mem.eql(u8, candidate, std.mem.span(outputName))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn findOutput(self: *Self, wl_output: *wl.Output) ?*Output {
+    for (self.outputs.items) |output| {
+        if (wl_output == output.wl_output) {
+            return output;
+        }
+    }
+    return null;
+}
+
+// Creation/Initialization
 fn create(alloc: std.mem.Allocator, io: std.Io, config: Config) !*Self {
     const display = try wl.Display.connect(null);
     errdefer display.disconnect();
@@ -41,12 +68,12 @@ fn create(alloc: std.mem.Allocator, io: std.Io, config: Config) !*Self {
         .shm = null,
         .compositor = null,
         .layer_shell = null,
-        .alloc = alloc,
-        .outputs = try std.ArrayList(*Output).initCapacity(alloc, 5),
-        .io = io,
         .display = display,
         .registry = registry,
+        .outputs = try std.ArrayList(*Output).initCapacity(alloc, 5),
         .config = config,
+        .alloc = alloc,
+        .io = io,
     };
 
     return ctx;
@@ -78,55 +105,8 @@ pub fn init(alloc: std.mem.Allocator, io: std.Io, config: Config) !*Self {
     return ctx;
 }
 
-fn addOutput(
-    self: *Self,
-    registry: *wl.Registry,
-    name: u32,
-) !void {
-    // Reserve the list entry before acquiring resources so registration cannot
-    // fail after ownership has transferred to Output.
-    try self.outputs.ensureUnusedCapacity(self.alloc, 1);
-    const outputState = try self.alloc.create(Output);
-    errdefer self.alloc.destroy(outputState);
-
-    const output = try registry.bind(name, wl.Output, 4);
-    errdefer output.release();
-    outputState.* = try Output.init(
-        self.alloc,
-        self.io,
-        output,
-        name,
-        self.config.nFlakes,
-        self.shm.?,
-    );
-    self.outputs.appendAssumeCapacity(outputState);
-
-    output.setListener(*Self, configureOutput, self);
-}
-
-fn isIgnored(
-    outputName: [*:0]const u8,
-    outputs: std.mem.TokenIterator(u8, .scalar),
-) bool {
-    var iter = outputs;
-    while (iter.next()) |candidate| {
-        if (mem.eql(u8, candidate, mem.span(outputName))) {
-            return true;
-        }
-    }
-    return false;
-}
-
-fn findOutput(self: *Self, wl_output: *wl.Output) ?*Output {
-    for (self.outputs.items) |output| {
-        if (wl_output == output.wl_output) {
-            return output;
-        }
-    }
-    return null;
-}
-
-fn configureOutput(wl_output: *wl.Output, event: wl.Output.Event, self: *Self) void {
+/// Listen to output configuration events, collecting name, scale and initialize our output trackings
+fn configureOutputListener(wl_output: *wl.Output, event: wl.Output.Event, self: *Self) void {
     const output = self.findOutput(wl_output) orelse {
         std.log.warn("Received unmanaged output", .{});
         return;
@@ -149,7 +129,7 @@ fn configureOutput(wl_output: *wl.Output, event: wl.Output.Event, self: *Self) v
         .scale => |scale| output.scale = scale.factor,
 
         .done => {
-            self.manageOutput(output) catch {
+            self.restartOutput(output) catch {
                 std.log.warn("Failed to configure output", .{});
                 return;
             };
@@ -162,29 +142,7 @@ fn configureOutput(wl_output: *wl.Output, event: wl.Output.Event, self: *Self) v
     }
 }
 
-fn removeOutput(self: *Self, name: u32) void {
-    for (self.pending_outputs.items, 0..) |pending_name, i| {
-        if (pending_name == name) {
-            _ = self.pending_outputs.swapRemove(i);
-            return;
-        }
-    }
-    for (self.outputs.items, 0..) |state, i| {
-        if (state.uname != name)
-            continue;
-
-        _ = self.outputs.swapRemove(i);
-
-        state.deinit();
-        self.alloc.destroy(state);
-        return;
-    }
-}
-
-fn isInterface(interface: [*:0]const u8, comptime T: type) bool {
-    return mem.orderZ(u8, interface, T.interface.name) == .eq;
-}
-/// Listen to the registry events, to update collect what we need
+/// Listen to the registry events, colllecting compositor connections and outputs
 fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, self: *Self) void {
     // zig fmt: off
     switch (event) {
@@ -217,13 +175,58 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, self: *Sel
     }
 }
 
+fn addOutput(
+    self: *Self,
+    registry: *wl.Registry,
+    name: u32,
+) !void {
+    // Reserve the list entry before acquiring resources so registration cannot
+    // fail after ownership has transferred to Output.
+    try self.outputs.ensureUnusedCapacity(self.alloc, 1);
+    const outputState = try self.alloc.create(Output);
+    errdefer self.alloc.destroy(outputState);
+
+    const output = try registry.bind(name, wl.Output, 4);
+    errdefer output.release();
+    outputState.* = try Output.init(
+        self.alloc,
+        self.io,
+        output,
+        name,
+        self.config.nFlakes,
+        self.shm.?,
+    );
+    self.outputs.appendAssumeCapacity(outputState);
+
+    output.setListener(*Self, configureOutputListener, self);
+}
+
 /// Initializes required fields in OutputInfo to manage an output
-fn manageOutput(self: *Self, output: *Output) !void {
+fn restartOutput(self: *Self, output: *Output) !void {
     // Deactivate old if exists
     output.deactivate();
     try output.activate(self.compositor.?, self.layer_shell.?);
 
     output.snowSystem.resetFlakesTo(self.config.nFlakes);
+}
+
+fn removeOutput(self: *Self, name: u32) void {
+    for (self.pending_outputs.items, 0..) |pending_name, i| {
+        if (pending_name == name) {
+            _ = self.pending_outputs.swapRemove(i);
+            return;
+        }
+    }
+    for (self.outputs.items, 0..) |state, i| {
+        if (state.uname != name)
+            continue;
+
+        _ = self.outputs.swapRemove(i);
+
+        state.deinit();
+        self.alloc.destroy(state);
+        return;
+    }
 }
 
 pub fn deinit(self: *Self) void {
