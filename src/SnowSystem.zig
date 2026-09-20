@@ -7,6 +7,7 @@ pub const Settings = struct {
     speed: f32 = 1.0,
     nFlakes: usize = 200,
     scale: usize = 1,
+    color: u32 = 0xFFFFFF,
 };
 
 flakes: snow.FlakeArray,

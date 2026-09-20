@@ -145,6 +145,7 @@ fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, self: *Self) void {
             self.doubleBuffer.?.mem(),
             self.width * self.scale,
             self.scale,
+            self.output.snowSystem.settings.color,
         ) catch return;
 
     self.doubleBuffer.?.attach(self.surface);

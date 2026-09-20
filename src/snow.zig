@@ -60,11 +60,11 @@ pub fn updateFlakes(flakeArray: *FlakeArray, alloc: std.mem.Allocator, height: u
     return removed;
 }
 
-pub fn renderFlakes(flakeArray: *FlakeArray, buffer_mem: []u32, buffer_width: usize, scale: usize) !void {
+pub fn renderFlakes(flakeArray: *FlakeArray, buffer_mem: []u32, buffer_width: usize, scale: usize, color: u32) !void {
     clearBuffer(buffer_mem);
 
     for (flakeArray.items) |flake| {
-        renderFlakeToBuffer(flake, buffer_mem, buffer_width, scale);
+        renderFlakeToBuffer(flake, buffer_mem, buffer_width, scale, color);
     }
 }
 
@@ -92,23 +92,27 @@ pub fn spawnNewFlakes(
     return j;
 }
 
-fn zToColor(z: u8) u32 {
-    // Bias: Dividing z prevents the values from ever reaching 0 (black/transparent).
-    // Alpha will range from 255 down to 128 (z / 2)
-    // RGB will range from 255 down to 192 (z / 4)
-    const alpha: u32 = 255 - (@as(u32, z) / 2);
-    const gray: u32 = 255 - (@as(u32, z) / 4);
+fn taintZ(color: u32, z: u8) u32 {
+    const alpha: u32 = 255 - @as(u32, z) / 2;
+    const shade: u32 = 255 - @as(u32, z) / 4;
 
-    const premul = (gray * alpha) / 255;
+    const r = (color >> 16) & 0xff;
+    const g = (color >> 8) & 0xff;
+    const b = color & 0xff;
 
-    return (alpha << 24) | (premul << 16) | (premul << 8) | premul;
+    // Shade, then premultiply by alpha.
+    const pr = (r * shade / 255) * alpha / 255;
+    const pg = (g * shade / 255) * alpha / 255;
+    const pb = (b * shade / 255) * alpha / 255;
+
+    return (alpha << 24) | (pr << 16) | (pg << 8) | pb;
 }
 
 // Simulation coordinates and pattern cells are logical units; width is in pixels.
-fn renderFlakeToBuffer(flake: *const flakes.Flake, m: []u32, width: usize, scale: usize) void {
+fn renderFlakeToBuffer(flake: *const flakes.Flake, m: []u32, width: usize, scale: usize, color: u32) void {
     std.debug.assert(scale > 0);
     if (width == 0) return;
-    const color = zToColor(flake.z);
+    const tainted_color = taintZ(color, flake.z);
     const coordinate = flake.normalizeCoordinates();
     const height = m.len / width;
 
@@ -124,7 +128,7 @@ fn renderFlakeToBuffer(flake: *const flakes.Flake, m: []u32, width: usize, scale
             const y = logical_y * scale;
             for (0..scale) |dy| {
                 const start = (y + dy) * width + x;
-                @memset(m[start..][0..scale], color);
+                @memset(m[start..][0..scale], tainted_color);
             }
         }
     }

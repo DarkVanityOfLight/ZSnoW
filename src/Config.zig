@@ -12,6 +12,7 @@ ignored_outputs: std.mem.TokenIterator(u8, .scalar),
 speed_multiplier: f32,
 nFlakes: usize = 200,
 scale: usize = 1,
+color: u32 = 0xFFFFFF,
 
 const OptionError = error{
     InvalidScale,
@@ -41,11 +42,15 @@ pub fn parseCli(ctx: CommandContext) !Self {
         return OptionError.InvalidScale;
     }
 
+    const color_s = ctx.flag("color", []const u8);
+    const color = try std.fmt.parseInt(u32, color_s, 16);
+
     return .{
         .ignored_outputs = outputs,
         .speed_multiplier = speed_multiplier,
         .nFlakes = nFlakes,
         .scale = scale,
+        .color = color,
     };
 }
 
@@ -95,6 +100,13 @@ pub fn cliSetup(io: std.Io, gpa: std.mem.Allocator, stdin: *std.Io.Reader, stdou
         .default_value = .{ .Int = 1 },
     });
 
+    try root.addFlag(.{
+        .name = "color",
+        .description = "Flake color",
+        .type = .String,
+        .default_value = .{ .String = "FFFFFF" },
+    });
+
     try root.addCommands(&.{});
     return root;
 }
@@ -104,5 +116,6 @@ pub fn makeSnowSettings(self: *Self) SnowSettings {
         .speed = self.speed_multiplier,
         .nFlakes = self.nFlakes,
         .scale = self.scale,
+        .color = self.color,
     };
 }
