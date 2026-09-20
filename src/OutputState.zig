@@ -14,7 +14,7 @@ const ActiveState = struct {
     surface: *wl.Surface,
     input_region: *wl.Region,
     layer_surface: *zwlr.LayerSurfaceV1,
-    doubleBuffer: DoubleBuffer,
+    doubleBuffer: ?DoubleBuffer = null,
     frame_callback: ?*wl.Callback = null,
     configured: bool,
 };
@@ -22,13 +22,15 @@ const ActiveState = struct {
 info: OutputInfo,
 snowSystem: SnowSystem,
 activeState: ?ActiveState = null,
+context: *Context,
 
 /// Takes ownership of output only on success. Keep this state at a stable
 /// address once activated: Wayland listeners refer to it and its buffers.
-pub fn init(alloc: std.mem.Allocator, io: std.Io, output: *wl.Output, name: u32, flake_count: u32) !Self {
+pub fn init(alloc: std.mem.Allocator, io: std.Io, output: *wl.Output, name: u32, flake_count: u32, context: *Context) !Self {
     return .{
         .info = OutputInfo.init(alloc, output, name),
         .snowSystem = try SnowSystem.init(alloc, io, flake_count),
+        .context = context,
     };
 }
 
@@ -36,7 +38,7 @@ pub fn activate(self: *Self, context: *Context) !void {
     std.debug.assert(self.activeState == null);
 
     // Create backed memory
-    const shm = context.shm orelse return error.NoWlShm;
+    // const shm = context.shm orelse return error.NoWlShm;
     const compositor = context.compositor orelse return error.NoWlCompositor;
     const layer_shell = context.layer_shell orelse return error.NoLayerShell;
 
@@ -58,23 +60,28 @@ pub fn activate(self: *Self, context: *Context) !void {
         "ZSnoW",
     );
     errdefer layer_surface.destroy();
-    layer_surface.setSize(self.info.width, self.info.height);
+    layer_surface.setAnchor(.{
+        .top = true,
+        .bottom = true,
+        .left = true,
+        .right = true,
+    });
+    layer_surface.setSize(0, 0);
 
     self.activeState = ActiveState{
         .surface = surface,
         .input_region = input_region,
         .layer_surface = layer_surface,
-        .doubleBuffer = try DoubleBuffer.init(
-            context.io,
-            self.info.width,
-            self.info.height,
-            self.info.name orelse "ZSnoW",
-            shm,
-        ),
+        // .doubleBuffer = try DoubleBuffer.init(
+        //     context.io,
+        //     self.info.width,
+        //     self.info.height,
+        //     self.info.name orelse "ZSnoW",
+        //     shm,
+        // ),
         .configured = false,
     };
     self.info.running = true;
-    self.activeState.?.doubleBuffer.listen();
 }
 
 pub fn deactivate(self: *Self) void {
@@ -84,7 +91,8 @@ pub fn deactivate(self: *Self) void {
             cb.destroy();
             s.frame_callback = null;
         }
-        s.doubleBuffer.deinit();
+        if (s.doubleBuffer) |*db|
+            db.deinit();
         s.input_region.destroy();
         s.layer_surface.destroy();
         s.surface.destroy();
@@ -94,7 +102,7 @@ pub fn deactivate(self: *Self) void {
 }
 
 pub fn attachCurrentBuffer(self: *Self) void {
-    self.activeState.?.doubleBuffer.attach(self.activeState.?.surface);
+    self.activeState.?.doubleBuffer.?.attach(self.activeState.?.surface);
 }
 
 pub fn applyConfiguration(self: *Self, context: *Context) !void {

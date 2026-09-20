@@ -32,10 +32,10 @@ fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *OutputStat
         output.snowSystem.update(output.info.width, output.info.height, timeDelta);
 
         // Work on the next frame if buffer is free
-        if (s.doubleBuffer.swap())
+        if (s.doubleBuffer.?.swap())
             snow.renderFlakes(
                 &output.snowSystem.flakes,
-                s.doubleBuffer.mem(),
+                s.doubleBuffer.?.mem(),
                 output.info.width,
             ) catch return;
 

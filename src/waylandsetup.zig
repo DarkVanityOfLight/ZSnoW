@@ -8,33 +8,42 @@
 //!    (metadata and snow system, activeState = null), add it to Context.outputs,
 //!    then register configureOutput. The state exists before its events arrive.
 //!
-//! 3. configureOutput collects mode, scale, geometry, and name events. A matching
+//! 3. configureOutput stores scale and name; mode and geometry are not used. A matching
 //!    ignored name calls removeOutput and returns immediately: removal frees the
 //!    state, even if it has never created a layer surface. Each name check uses
 //!    a copy of the ignore iterator so it checks the full list.
 //!
 //! 4. wl_output.done calls manageOutput(), which deactivates any old surface,
-//!    then activates a new one. activate() creates the wl_surface, layer surface,
-//!    and buffers, with configured = false. manageOutput installs the layer
+//!    then activates a new one. activate() creates the wl_surface and layer surface,
+//!    anchors all four edges, and requests size (0, 0). The new ActiveState has
+//!    configured = false and doubleBuffer = null. manageOutput installs the layer
 //!    listener and commits without attaching a buffer to begin configuration.
 //!    Output configuration and layer-surface configuration are separate stages.
 //!
 //! 5. layerSurfaceListener receives the layer surface's configure event and
-//!    acknowledges its serial. The current handler attaches the initial buffer,
-//!    requests a frame callback, and commits. It repeats this on every configure;
-//!    requestFrame prevents duplicate outstanding callbacks. Currently configured
-//!    is initialized to false but never read or set true: it does not yet gate
-//!    this startup path. Configure dimensions are also currently ignored in
-//!    favor of the output mode dimensions.
+//!    acknowledges its serial, even when the dimensions are unchanged. If buffers
+//!    exist and both logical dimensions match, it returns. Otherwise it allocates
+//!    replacement buffers at configure width/height multiplied by output scale,
+//!    using output.context for shared resources. Allocation failure logs and returns,
+//!    preserving any old buffers and dimensions; on first allocation failure,
+//!    animation has not started. There is no automatic allocation retry.
+//!    After successful allocation it destroys the old buffers, stores the new ones,
+//!    registers release listeners at their stable address, and updates info.width
+//!    and info.height with the logical configure dimensions. If configured is false,
+//!    it attaches the initial buffer, requests a frame, commits, and sets configured
+//!    true. Otherwise the existing animation loop presents the replacement buffers.
 //!
 //! 6. animation.frameCallback clears and destroys the completed callback, updates
 //!    snow, and renders into the next buffer if it is free. It attaches the
 //!    current buffer, damages the surface, requests the next callback, and commits.
 //!    Buffer release events separately mark buffers available for reuse.
+//!    Currently animation still uses logical info.width/height for pixel rendering;
+//!    adapting those calculations to scaled buffer dimensions remains necessary.
 //!
 //! 7. Another wl_output.done repeats manageOutput(), destroying and recreating
-//!    rendering resources and restarting layer-surface configuration. A later
-//!    layer-surface configure alone does not recreate those resources.
+//!    surfaces and restarting layer-surface configuration with no buffers. Stored
+//!    dimensions survive, but the null buffer prevents skipping initial allocation.
+//!    A later layer-surface configure can replace buffers without recreating surfaces.
 //!
 //! 8. layer-surface.closed calls deactivate(): stop animation, destroy any pending
 //!    frame callback, buffers, region, and surfaces, then set activeState = null.
@@ -44,6 +53,8 @@
 //!    similarly cleans up all remaining outputs before disconnecting Wayland.
 //!
 //! Lifetime rule: activeState may be null while OutputState is still alive.
+//! An existing activeState may have no buffers until configuration succeeds.
+//! OutputState.context borrows the owning Context, which outlives its outputs.
 //! configured belongs to a particular surface instance, not to output discovery.
 //! After removeOutput(), neither OutputState nor pointers into its info are valid.
 
@@ -58,6 +69,7 @@ const OutputState = @import("OutputState.zig");
 const animation = @import("animation.zig");
 
 const CliContext = @import("main.zig").CliContext;
+const DoubleBuffer = @import("DoubleBuffer.zig");
 
 const nFlakes = 200;
 
@@ -160,6 +172,7 @@ fn addOutput(
         output,
         name,
         nFlakes,
+        context,
     );
     context.outputs.appendAssumeCapacity(outputState);
 
@@ -214,6 +227,33 @@ fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSu
             std.log.debug("Received configure call for layer surface: {any}", .{configure});
             layer_surface.ackConfigure(configure.serial);
 
+            if (output.info.height == event.configure.height and
+                output.info.width == event.configure.width and
+                output.activeState.?.doubleBuffer != null) return;
+
+            const scale: u32 = @intCast(output.info.scale);
+            const buffer_width = configure.width * scale;
+            const buffer_height = configure.height * scale;
+            const replacement = DoubleBuffer.init(
+                output.context.io,
+                buffer_width,
+                buffer_height,
+                output.info.name orelse "ZSnoW",
+                output.context.shm.?,
+            ) catch |err| {
+                std.log.err("Failed to create buffers: {s}", .{@errorName(err)});
+                return;
+            };
+
+            const state = &output.activeState.?;
+            if (state.doubleBuffer) |*old| old.deinit();
+            state.doubleBuffer = replacement;
+            state.doubleBuffer.?.listen();
+
+            output.info.height = configure.height;
+            output.info.width = configure.width;
+            
+
             if(output.activeState.?.configured) return;
 
             // Need to attach buffer once to receive frame callbacks
@@ -249,21 +289,16 @@ fn configureOutput(output: *wl.Output, event: wl.Output.Event, context: *Context
     // Configure
     std.log.debug("Event {s} on output: {}", .{@tagName(event), outputInfo.uname});
     switch (event) {
-        .mode => |geometry| {
-            if (!geometry.flags.current) return;
-
-            outputInfo.mode_height = @intCast(geometry.height);
-            outputInfo.mode_width = @intCast(geometry.width);
-        },
-
         .name => |name|{
-              var ignored = context.cli_context.ignored_outputs;
-              while (ignored.next()) |candidate| {
-                  if (mem.eql(u8, candidate, mem.span(name.name))) {
-                      removeOutput(context, outputInfo.uname);
-                      return;
-                  }
+            // Check if the output should be ignored
+            var ignored = context.cli_context.ignored_outputs;
+            while (ignored.next()) |candidate| {
+              if (mem.eql(u8, candidate, mem.span(name.name))) {
+                  removeOutput(context, outputInfo.uname);
+                  return;
               }
+            }
+
             outputInfo.setName(name.name) catch |err| {
                 std.log.warn("Failed to set name: {any}", .{err});
             };
@@ -273,17 +308,7 @@ fn configureOutput(output: *wl.Output, event: wl.Output.Event, context: *Context
             outputInfo.scale = scale.factor;
         },
 
-        .geometry => |geometry|{
-            outputInfo.swap_dimensions = switch (geometry.transform) {
-                .@"90", .@"270", .flipped_90, .flipped_270 => true,
-                else => false,
-            };
-        },
-
         .done => {
-            // Derive dimensions from the mode once all output events have arrived.
-            outputInfo.width = if (outputInfo.swap_dimensions) outputInfo.mode_height else outputInfo.mode_width;
-            outputInfo.height = if (outputInfo.swap_dimensions) outputInfo.mode_width else outputInfo.mode_height;
             manageOutput(outputState, context) catch {std.log.warn("Failed to configure output", .{}); return;};
             std.log.info("Done managing output {s}, size is {}x{}", .{outputInfo.name orelse "unnamed", outputInfo.width, outputInfo.height});
         },
