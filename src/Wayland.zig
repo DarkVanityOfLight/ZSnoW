@@ -6,7 +6,6 @@ const wl = wayland.client.wl;
 const zwlr = wayland.client.zwlr;
 
 const Output = @import("Output.zig");
-const animation = @import("animation.zig");
 
 const Config = @import("Config.zig");
 const DoubleBuffer = @import("DoubleBuffer.zig");
@@ -154,7 +153,9 @@ fn configureOutput(wl_output: *wl.Output, event: wl.Output.Event, self: *Self) v
                 std.log.warn("Failed to configure output", .{});
                 return;
             };
-            std.log.info("Done managing output {s}, size is {}x{}", .{ output.name orelse "unnamed", output.width, output.height });
+            std.log.info("Done configuring output {s}", .{
+                output.name orelse "unnamed",
+            });
         },
 
         else => {},

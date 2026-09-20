@@ -13,12 +13,9 @@ const Self = @This();
 wl_output: *wl.Output,
 
 uname: u32,
-height: u32 = 0,
-width: u32 = 0,
 scale: i32 = 1,
 
 name: ?[]const u8 = null,
-time: u32 = 0,
 running: bool = true,
 
 snowSystem: SnowSystem,
@@ -67,14 +64,10 @@ pub fn deactivate(self: *Self) void {
     }
 }
 
-pub fn attachCurrentBuffer(self: *Self) void {
-    self.layer_surface.?.doubleBuffer.?.attach(self.layer_surface.?.surface);
-}
-
-pub fn applyConfiguration(self: *Self, context: *Wayland) !void {
-    self.deactivate();
-    try self.activate(context.compositor.?, context.layer_shell.?);
-}
+// pub fn applyConfiguration(self: *Self, compositor: *wl.Compositor, layer_shell: *zwlr.LayerShellV1) !void {
+//     self.deactivate();
+//     try self.activate(compositor, layer_shell);
+// }
 
 pub fn deinit(self: *Self) void {
     self.deactivate();

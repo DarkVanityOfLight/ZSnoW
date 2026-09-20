@@ -6,7 +6,8 @@ const zwlr = wayland.client.zwlr;
 
 const DoubleBuffer = @import("DoubleBuffer.zig");
 const Output = @import("Output.zig");
-const animation = @import("animation.zig");
+
+const snow = @import("snow.zig");
 
 const Self = @This();
 
@@ -17,6 +18,10 @@ doubleBuffer: ?DoubleBuffer = null,
 frame_callback: ?*wl.Callback = null,
 configured: bool,
 output: *Output,
+
+height: u32 = 0,
+width: u32 = 0,
+time: u32 = 0,
 
 pub fn init(compositor: *wl.Compositor, layer_shell: *zwlr.LayerShellV1, output: *Output, scale: i32) !Self {
     // std.debug.assert(self.activeState == null);
@@ -68,8 +73,8 @@ fn listener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Even
             std.log.debug("Received configure call for layer surface: {any}", .{configure});
             layer_surface.ackConfigure(configure.serial);
 
-            if (self.output.height == event.configure.height and
-                self.output.width == event.configure.width and
+            if (self.height == event.configure.height and
+                self.width == event.configure.width and
                 self.doubleBuffer != null) return;
 
             const scale: u32 = @intCast(self.output.scale);
@@ -90,14 +95,14 @@ fn listener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Even
             self.doubleBuffer = replacement;
             self.doubleBuffer.?.listen();
 
-            self.output.height = configure.height;
-            self.output.width = configure.width;
+            self.height = configure.height;
+            self.width = configure.width;
 
             if (self.configured) return;
 
             // Need to attach buffer once to receive frame callbacks
-            self.output.attachCurrentBuffer();
-            animation.requestFrame(self.output) catch return;
+            self.doubleBuffer.?.attach(self.surface);
+            self.requestFrame() catch return;
             self.surface.commit();
             self.configured = true;
         },
@@ -107,6 +112,48 @@ fn listener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Even
             self.output.deactivate();
         },
     }
+}
+
+fn requestFrame(self: *Self) !void {
+    if (self.frame_callback != null) return;
+
+    const cb = try self.surface.frame();
+    cb.setListener(*Self, frameCallback, self);
+    self.frame_callback = cb;
+}
+
+fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, self: *Self) void {
+    if (!self.output.running) return;
+
+    // Handle future callbacks
+    self.frame_callback = null;
+    cb.destroy();
+
+    // Calculate time between callbacks
+    const currentTimeInMs = event.done.callback_data;
+    const timeDelta = currentTimeInMs -% (self.time);
+    self.time = currentTimeInMs;
+
+    self.output.snowSystem.update(self.width, self.height, timeDelta);
+
+    // Work on the next frame if buffer is free
+    if (self.doubleBuffer.?.swap())
+        snow.renderFlakes(
+            &self.output.snowSystem.flakes,
+            self.doubleBuffer.?.mem(),
+            self.width,
+        ) catch return;
+
+    self.doubleBuffer.?.attach(self.surface);
+    self.surface.damage(0, 0, @intCast(self.width), @intCast(self.height));
+
+    self.requestFrame() catch |err| {
+        std.log.err("Cannot schedule animation frame: {s}", .{@errorName(err)});
+        self.output.running = false;
+        return;
+    };
+
+    self.surface.commit();
 }
 
 pub fn deinit(self: *Self) void {
