@@ -28,14 +28,18 @@ pub fn init(alloc: std.mem.Allocator, io: std.Io, settings: Settings) !Self {
     };
 }
 
-pub fn resetFlakesTo(self: *Self, nFlakes: u32) void {
+pub fn resetFlakes(self: *Self) void {
+    self.resetFlakesTo(self.settings.nFlakes);
+}
+
+fn resetFlakesTo(self: *Self, to: u32) void {
     for (self.flakes.items) |flake| {
         flake.deinit();
         self.alloc.destroy(flake);
     }
 
     self.flakes.clearRetainingCapacity();
-    self.missing_flakes = nFlakes;
+    self.missing_flakes = to;
 }
 
 pub fn update(self: *Self, width: u32, height: u32, time_delta: u32) void {

@@ -205,7 +205,7 @@ fn restartOutput(self: *Self, output: *Output) !void {
     output.deactivate();
     try output.activate(self.compositor.?, self.layer_shell.?);
 
-    output.snowSystem.resetFlakesTo(self.config.nFlakes);
+    output.snowSystem.resetFlakes();
 }
 
 fn removeOutput(self: *Self, name: u32) void {

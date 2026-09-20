@@ -19,9 +19,12 @@ pub fn parseCli(ctx: CommandContext) !Self {
     const speed_multiplier_s = ctx.flag("speed", []const u8);
     const speed_multiplier = try std.fmt.parseFloat(f32, speed_multiplier_s);
 
+    const nFlakes = ctx.flag("nFlakes", u32);
+
     return .{
         .ignored_outputs = outputs,
         .speed_multiplier = speed_multiplier,
+        .nFlakes = nFlakes,
     };
 }
 
@@ -64,6 +67,13 @@ pub fn cliSetup(io: std.Io, gpa: std.mem.Allocator, execFn: ExecFn) !*zli.Comman
         .description = "Particle speed multiplier as float",
         .type = .String,
         .default_value = .{ .String = "1.0" },
+    });
+
+    try root.addFlag(.{
+        .name = "nFlakes",
+        .description = "Set the number of flakes simulated at the same time at most",
+        .type = .Int,
+        .default_value = .{ .Int = 200 },
     });
 
     try root.addCommands(&.{});
