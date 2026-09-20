@@ -22,6 +22,7 @@ output: *Output,
 height: u32 = 0,
 width: u32 = 0,
 time: u32 = 0,
+scale: u32,
 
 pub fn init(compositor: *wl.Compositor, layer_shell: *zwlr.LayerShellV1, output: *Output, scale: i32) !Self {
     // std.debug.assert(self.activeState == null);
@@ -58,6 +59,7 @@ pub fn init(compositor: *wl.Compositor, layer_shell: *zwlr.LayerShellV1, output:
         .layer_surface = layer_surface,
         .configured = false,
         .output = output,
+        .scale = @intCast(scale),
     };
 }
 
@@ -77,7 +79,7 @@ fn listener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Even
                 self.width == event.configure.width and
                 self.doubleBuffer != null) return;
 
-            const scale: u32 = @intCast(self.output.scale);
+            const scale = self.scale;
             const buffer_width = configure.width * scale;
             const buffer_height = configure.height * scale;
             const replacement = DoubleBuffer.init(
@@ -141,7 +143,8 @@ fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, self: *Self) void {
         snow.renderFlakes(
             &self.output.snowSystem.flakes,
             self.doubleBuffer.?.mem(),
-            self.width,
+            self.width * self.scale,
+            self.scale,
         ) catch return;
 
     self.doubleBuffer.?.attach(self.surface);

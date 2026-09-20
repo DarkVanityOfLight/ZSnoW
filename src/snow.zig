@@ -55,11 +55,11 @@ pub fn updateFlakes(flakeArray: *FlakeArray, alloc: std.mem.Allocator, height: u
     return removed;
 }
 
-pub fn renderFlakes(flakeArray: *FlakeArray, buffer_mem: []u32, outputWidth: u32) !void {
+pub fn renderFlakes(flakeArray: *FlakeArray, buffer_mem: []u32, buffer_width: u32, scale: u32) !void {
     clearBuffer(buffer_mem);
 
     for (flakeArray.items) |flake| {
-        renderFlakeToBuffer(flake, buffer_mem, outputWidth);
+        renderFlakeToBuffer(flake, buffer_mem, buffer_width, scale);
     }
 }
 
@@ -92,23 +92,54 @@ fn zToColor(z: u8) u32 {
     return (alpha << 24) | (premul << 16) | (premul << 8) | premul;
 }
 
-fn renderFlakeToBuffer(flake: *const flakes.Flake, m: []u32, width: u32) void {
+// Simulation coordinates and pattern cells are logical units; width is in pixels.
+fn renderFlakeToBuffer(flake: *const flakes.Flake, m: []u32, width: u32, scale: u32) void {
+    std.debug.assert(scale > 0);
+    if (width == 0) return;
     const color = zToColor(flake.z);
     const coordinate = flake.normalizeCoordinates();
-    const height: u32 = @intCast(m.len / width);
+    const height = m.len / width;
 
     for (flake.pattern.pattern, 0..) |row, row_num| {
         for (row, 0..) |pv, column_num| {
             if (!pv) continue;
 
-            const x = coordinate.x + column_num;
-            const y = coordinate.y + row_num;
+            const logical_x = @as(usize, coordinate.x) + column_num;
+            const logical_y = @as(usize, coordinate.y) + row_num;
+            if (logical_x >= width / scale or logical_y >= height / scale) continue;
 
-            if (x >= width or y >= height) continue;
+            const x = logical_x * scale;
+            const y = logical_y * scale;
+            for (0..scale) |dy| {
+                const start = (y + dy) * width + x;
+                @memset(m[start..][0..scale], color);
+            }
+        }
+    }
+}
 
-            // Calculate the index in the buffer and ensure we are within bounds
-            const index = y * width + x;
-            m[index] = color;
+test "rendering scales positions and patterns and clips at logical edges" {
+    var flake = try flakes.Flake.init(&flakes.flake0, 2, 1, 0, 0, 0, 1, std.testing.allocator);
+    defer flake.deinit();
+    var items = [_]*flakes.Flake{&flake};
+    var array: FlakeArray = .{ .items = &items, .capacity = items.len };
+
+    // A 4x3 logical surface clips the right and bottom of this 3x3 pattern.
+    const expected = [_]u32{
+        0, 0, 0,          0,
+        0, 0, 0xffffffff, 0,
+        0, 0, 0,          0xffffffff,
+    };
+    for ([_]u32{ 1, 2, 3 }) |scale| {
+        const width = 4 * scale;
+        const pixels = try std.testing.allocator.alloc(u32, width * 3 * scale);
+        defer std.testing.allocator.free(pixels);
+        @memset(pixels, 0x12345678);
+        try renderFlakes(&array, pixels, width, scale);
+        for (pixels, 0..) |pixel, i| {
+            const logical_x = (i % width) / scale;
+            const logical_y = (i / width) / scale;
+            try std.testing.expectEqual(expected[logical_y * 4 + logical_x], pixel);
         }
     }
 }
