@@ -1,5 +1,4 @@
 const std = @import("std");
-const OutputInfo = @import("OutputInfo.zig");
 const SnowSystem = @import("SnowSystem.zig");
 const DoubleBuffer = @import("DoubleBuffer.zig");
 const Context = @import("waylandsetup.zig").Context;
@@ -19,19 +18,38 @@ const ActiveState = struct {
     configured: bool,
 };
 
-info: OutputInfo,
+output: *wl.Output,
+
+uname: u32,
+height: u32 = 0,
+width: u32 = 0,
+scale: i32 = 1,
+
+name: ?[]const u8 = null,
+time: u32 = 0,
+running: bool = true,
+
 snowSystem: SnowSystem,
 activeState: ?ActiveState = null,
 context: *Context,
+alloc: std.mem.Allocator,
 
 /// Takes ownership of output only on success. Keep this state at a stable
 /// address once activated: Wayland listeners refer to it and its buffers.
 pub fn init(alloc: std.mem.Allocator, io: std.Io, output: *wl.Output, name: u32, flake_count: u32, context: *Context) !Self {
     return .{
-        .info = OutputInfo.init(alloc, output, name),
+        .output = output,
+        .uname = name,
         .snowSystem = try SnowSystem.init(alloc, io, flake_count),
         .context = context,
+        .alloc = alloc,
     };
+}
+
+pub fn setName(self: *Self, name: [*:0]const u8) !void {
+    const replacement = try self.alloc.dupe(u8, std.mem.span(name));
+    if (self.name) |old| self.alloc.free(old);
+    self.name = replacement;
 }
 
 pub fn activate(self: *Self, context: *Context) !void {
@@ -45,7 +63,7 @@ pub fn activate(self: *Self, context: *Context) !void {
     // Create a surface
     const surface = try compositor.createSurface();
     errdefer surface.destroy();
-    surface.setBufferScale(self.info.scale);
+    surface.setBufferScale(self.scale);
 
     // Set input region none
     const input_region = try compositor.createRegion();
@@ -55,7 +73,7 @@ pub fn activate(self: *Self, context: *Context) !void {
     // Make it a layer surface
     const layer_surface = try layer_shell.getLayerSurface(
         surface,
-        self.info.output,
+        self.output,
         zwlr.LayerShellV1.Layer.background,
         "ZSnoW",
     );
@@ -72,20 +90,13 @@ pub fn activate(self: *Self, context: *Context) !void {
         .surface = surface,
         .input_region = input_region,
         .layer_surface = layer_surface,
-        // .doubleBuffer = try DoubleBuffer.init(
-        //     context.io,
-        //     self.info.width,
-        //     self.info.height,
-        //     self.info.name orelse "ZSnoW",
-        //     shm,
-        // ),
         .configured = false,
     };
-    self.info.running = true;
+    self.running = true;
 }
 
 pub fn deactivate(self: *Self) void {
-    self.info.running = false;
+    self.running = false;
     if (self.activeState) |*s| {
         if (s.frame_callback) |cb| {
             cb.destroy();
@@ -112,6 +123,11 @@ pub fn applyConfiguration(self: *Self, context: *Context) !void {
 
 pub fn deinit(self: *Self) void {
     self.deactivate();
-    self.info.deinit();
+
+    if (self.name) |name|
+        self.alloc.free(name);
+
+    self.output.release();
+
     self.snowSystem.deinit();
 }

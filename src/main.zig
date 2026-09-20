@@ -9,7 +9,6 @@ const setup = @import("waylandsetup.zig").setup;
 const zli = @import("zli");
 
 const snow = @import("snow.zig");
-const OutputState = @import("OutputState.zig");
 const Config = @import("Config.zig");
 
 pub const std_options: std.Options = .{

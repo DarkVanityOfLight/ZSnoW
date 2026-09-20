@@ -4,7 +4,7 @@
 //!    globals provide the compositor, shared-memory interface, layer shell,
 //!    and outputs. The event loop continues dispatching events after setup.
 //!
-//! 2. An output global calls addOutput(): bind wl_output, initialize OutputState
+//! 2. An output global calls addOutput(): bind wl_output, initialize Output
 //!    (metadata and snow system, activeState = null), add it to Context.outputs,
 //!    then register configureOutput. The state exists before its events arrive.
 //!
@@ -47,16 +47,16 @@
 //!
 //! 8. layer-surface.closed calls deactivate(): stop animation, destroy any pending
 //!    frame callback, buffers, region, and surfaces, then set activeState = null.
-//!    The OutputState remains registered. Registry global_remove instead calls
+//!    The Output remains registered. Registry global_remove instead calls
 //!    removeOutput(): remove the list entry, deactivate, release output metadata
 //!    and wl_output, free the snow system, and destroy the state. Context.deinit()
 //!    similarly cleans up all remaining outputs before disconnecting Wayland.
 //!
-//! Lifetime rule: activeState may be null while OutputState is still alive.
+//! Lifetime rule: activeState may be null while Output is still alive.
 //! An existing activeState may have no buffers until configuration succeeds.
-//! OutputState.context borrows the owning Context, which outlives its outputs.
+//! Output.context borrows the owning Context, which outlives its outputs.
 //! configured belongs to a particular surface instance, not to output discovery.
-//! After removeOutput(), neither OutputState nor pointers into its info are valid.
+//! After removeOutput(), neither Output nor pointers into its info are valid.
 
 const std = @import("std");
 const mem = std.mem;
@@ -65,7 +65,7 @@ const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const zwlr = wayland.client.zwlr;
 
-const OutputState = @import("OutputState.zig");
+const Output = @import("Output.zig");
 const animation = @import("animation.zig");
 
 const Config = @import("Config.zig");
@@ -77,7 +77,7 @@ pub const Context = struct {
     shm: ?*wl.Shm,
     compositor: ?*wl.Compositor,
     layer_shell: ?*zwlr.LayerShellV1,
-    outputs: std.ArrayList(*OutputState),
+    outputs: std.ArrayList(*Output),
     alloc: std.mem.Allocator,
     io: std.Io,
     display: *wl.Display,
@@ -112,7 +112,7 @@ fn createContext(alloc: std.mem.Allocator, io: std.Io, config: Config) !*Context
         .compositor = null,
         .layer_shell = null,
         .alloc = alloc,
-        .outputs = try std.ArrayList(*OutputState).initCapacity(alloc, 5),
+        .outputs = try std.ArrayList(*Output).initCapacity(alloc, 5),
         .io = io,
         .display = display,
         .registry = registry,
@@ -136,7 +136,7 @@ pub fn setup(alloc: std.mem.Allocator, io: std.Io, config: Config) !*Context {
 }
 
 /// Initializes required fields in OutputInfo to manage an output
-fn manageOutput(output: *OutputState, context: *Context) !void {
+fn manageOutput(output: *Output, context: *Context) !void {
     // Deactivate old if exists
     output.deactivate();
     try output.activate(context);
@@ -144,7 +144,7 @@ fn manageOutput(output: *OutputState, context: *Context) !void {
     output.snowSystem.resetFlakesTo(nFlakes);
 
     // Listen for configure and kill calls
-    output.activeState.?.layer_surface.setListener(*OutputState, layerSurfaceListener, output);
+    output.activeState.?.layer_surface.setListener(*Output, layerSurfaceListener, output);
 
     output.activeState.?.surface.commit();
 }
@@ -159,14 +159,14 @@ fn addOutput(
     name: u32,
 ) !void {
     // Reserve the list entry before acquiring resources so registration cannot
-    // fail after ownership has transferred to OutputState.
+    // fail after ownership has transferred to Output.
     try context.outputs.ensureUnusedCapacity(context.alloc, 1);
-    const outputState = try context.alloc.create(OutputState);
+    const outputState = try context.alloc.create(Output);
     errdefer context.alloc.destroy(outputState);
 
     const output = try registry.bind(name, wl.Output, 4);
     errdefer output.release();
-    outputState.* = try OutputState.init(
+    outputState.* = try Output.init(
         context.alloc,
         context.io,
         output,
@@ -181,8 +181,7 @@ fn addOutput(
 
 fn removeOutput(context: *Context, name: u32) void {
     for (context.outputs.items, 0..) |state, i| {
-        const info = state.info;
-        if (info.uname != name)
+        if (state.uname != name)
             continue;
 
         _ = context.outputs.swapRemove(i);
@@ -221,24 +220,24 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, context: *
 }
 
 /// Listen to events of our layer surface
-fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Event, output: *OutputState) void {
+fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Event, output: *Output) void {
     switch (event) {
         .configure => |configure| {
             std.log.debug("Received configure call for layer surface: {any}", .{configure});
             layer_surface.ackConfigure(configure.serial);
 
-            if (output.info.height == event.configure.height and
-                output.info.width == event.configure.width and
+            if (output.height == event.configure.height and
+                output.width == event.configure.width and
                 output.activeState.?.doubleBuffer != null) return;
 
-            const scale: u32 = @intCast(output.info.scale);
+            const scale: u32 = @intCast(output.scale);
             const buffer_width = configure.width * scale;
             const buffer_height = configure.height * scale;
             const replacement = DoubleBuffer.init(
                 output.context.io,
                 buffer_width,
                 buffer_height,
-                output.info.name orelse "ZSnoW",
+                output.name orelse "ZSnoW",
                 output.context.shm.?,
             ) catch |err| {
                 std.log.err("Failed to create buffers: {s}", .{@errorName(err)});
@@ -250,8 +249,8 @@ fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSu
             state.doubleBuffer = replacement;
             state.doubleBuffer.?.listen();
 
-            output.info.height = configure.height;
-            output.info.width = configure.width;
+            output.height = configure.height;
+            output.width = configure.width;
             
 
             if(output.activeState.?.configured) return;
@@ -272,45 +271,44 @@ fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSu
 
 }
 
-fn configureOutput(output: *wl.Output, event: wl.Output.Event, context: *Context) void {
+fn configureOutput(wl_output: *wl.Output, event: wl.Output.Event, context: *Context) void {
     // Find the correct output to configure
-    const outputState = blk: {
+    const output = blk: {
         for (context.outputs.items) |outputStateIterated| {
-            if (output == outputStateIterated.info.output) {
+            if (wl_output == outputStateIterated.output) {
                 break :blk outputStateIterated;
             }
         }
         std.log.warn("Received unmanaged output", .{});
         return;
     };
-    const outputInfo = &outputState.info;
 
 
     // Configure
-    std.log.debug("Event {s} on output: {}", .{@tagName(event), outputInfo.uname});
+    std.log.debug("Event {s} on output: {}", .{@tagName(event), output.uname});
     switch (event) {
         .name => |name|{
             // Check if the output should be ignored
             var ignored = context.config.ignored_outputs;
             while (ignored.next()) |candidate| {
               if (mem.eql(u8, candidate, mem.span(name.name))) {
-                  removeOutput(context, outputInfo.uname);
+                  removeOutput(context, output.uname);
                   return;
               }
             }
 
-            outputInfo.setName(name.name) catch |err| {
+            output.setName(name.name) catch |err| {
                 std.log.warn("Failed to set name: {any}", .{err});
             };
         },
 
         .scale => |scale| {
-            outputInfo.scale = scale.factor;
+            output.scale = scale.factor;
         },
 
         .done => {
-            manageOutput(outputState, context) catch {std.log.warn("Failed to configure output", .{}); return;};
-            std.log.info("Done managing output {s}, size is {}x{}", .{outputInfo.name orelse "unnamed", outputInfo.width, outputInfo.height});
+            manageOutput(output, context) catch {std.log.warn("Failed to configure output", .{}); return;};
+            std.log.info("Done managing output {s}, size is {}x{}", .{output.name orelse "unnamed", output.width, output.height});
         },
 
         else => {},
