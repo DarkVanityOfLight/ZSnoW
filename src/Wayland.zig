@@ -104,7 +104,19 @@ fn addOutput(
     output.setListener(*Self, configureOutput, self);
 }
 
-// TODO: Move to Output.zig
+fn isIgnored(
+    outputName: [*:0]const u8,
+    outputs: std.mem.TokenIterator(u8, .scalar),
+) bool {
+    var iter = outputs;
+    while (iter.next()) |candidate| {
+        if (mem.eql(u8, candidate, mem.span(outputName))) {
+            return true;
+        }
+    }
+    return false;
+}
+
 fn configureOutput(wl_output: *wl.Output, event: wl.Output.Event, self: *Self) void {
     // Find the correct output to configure
     const output = blk: {
@@ -122,12 +134,9 @@ fn configureOutput(wl_output: *wl.Output, event: wl.Output.Event, self: *Self) v
     switch (event) {
         .name => |name| {
             // Check if the output should be ignored
-            var ignored = self.config.ignored_outputs;
-            while (ignored.next()) |candidate| {
-                if (mem.eql(u8, candidate, mem.span(name.name))) {
-                    removeOutput(self, output.uname);
-                    return;
-                }
+            if (isIgnored(name.name, self.config.ignored_outputs)) {
+                self.removeOutput(output.uname);
+                return;
             }
 
             output.setName(name.name) catch |err| {
