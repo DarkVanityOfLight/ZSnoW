@@ -8,7 +8,7 @@ fn clearBuffer(buffer_mem: []u32) void {
 }
 
 // Float flakes
-pub fn generateRandomFlake(rand: std.Random, outputWidth: u32, scale: usize, alloc: std.mem.Allocator) !*flakes.Flake {
+pub fn generateRandomFlake(rand: std.Random, outputWidth: usize, scale: usize, alloc: std.mem.Allocator) !*flakes.Flake {
     const flake_int = rand.uintAtMost(u8, flakes.FlakePatterns.len - 1);
 
     const pattern = flakes.FlakePatterns[flake_int];
@@ -27,7 +27,7 @@ pub fn generateRandomFlake(rand: std.Random, outputWidth: u32, scale: usize, all
 
     flake.* = try flakes.Flake.init(
         pattern,
-        @floatFromInt(rand.uintAtMost(u32, outputWidth)),
+        @floatFromInt(rand.uintAtMost(usize, outputWidth)),
         0,
         std.math.clamp(rand.int(u8), 0, 250),
         dy,
@@ -39,7 +39,7 @@ pub fn generateRandomFlake(rand: std.Random, outputWidth: u32, scale: usize, all
     return flake;
 }
 
-pub fn updateFlakes(flakeArray: *FlakeArray, alloc: std.mem.Allocator, height: u32, timeDelta: f64) usize {
+pub fn updateFlakes(flakeArray: *FlakeArray, alloc: std.mem.Allocator, height: usize, timeDelta: f64) usize {
     var removed: usize = 0;
     var i: usize = flakeArray.items.len;
 
@@ -60,7 +60,7 @@ pub fn updateFlakes(flakeArray: *FlakeArray, alloc: std.mem.Allocator, height: u
     return removed;
 }
 
-pub fn renderFlakes(flakeArray: *FlakeArray, buffer_mem: []u32, buffer_width: u32, scale: u32) !void {
+pub fn renderFlakes(flakeArray: *FlakeArray, buffer_mem: []u32, buffer_width: usize, scale: usize) !void {
     clearBuffer(buffer_mem);
 
     for (flakeArray.items) |flake| {
@@ -73,7 +73,7 @@ pub fn spawnNewFlakes(
     flakeArray: *FlakeArray,
     alloc: std.mem.Allocator,
     i: usize,
-    outputWidth: u32,
+    outputWidth: usize,
     scale: usize,
 ) usize {
     var j = i;
@@ -105,7 +105,7 @@ fn zToColor(z: u8) u32 {
 }
 
 // Simulation coordinates and pattern cells are logical units; width is in pixels.
-fn renderFlakeToBuffer(flake: *const flakes.Flake, m: []u32, width: u32, scale: u32) void {
+fn renderFlakeToBuffer(flake: *const flakes.Flake, m: []u32, width: usize, scale: usize) void {
     std.debug.assert(scale > 0);
     if (width == 0) return;
     const color = zToColor(flake.z);
@@ -116,8 +116,8 @@ fn renderFlakeToBuffer(flake: *const flakes.Flake, m: []u32, width: u32, scale: 
         for (row, 0..) |pv, column_num| {
             if (!pv) continue;
 
-            const logical_x = @as(usize, coordinate.x) + column_num;
-            const logical_y = @as(usize, coordinate.y) + row_num;
+            const logical_x = coordinate.x + column_num;
+            const logical_y = coordinate.y + row_num;
             if (logical_x >= width / scale or logical_y >= height / scale) continue;
 
             const x = logical_x * scale;
@@ -142,7 +142,7 @@ test "rendering scales positions and patterns and clips at logical edges" {
         0, 0, 0xffffffff, 0,
         0, 0, 0,          0xffffffff,
     };
-    for ([_]u32{ 1, 2, 3 }) |scale| {
+    for ([_]usize{ 1, 2, 3 }) |scale| {
         const width = 4 * scale;
         const pixels = try std.testing.allocator.alloc(u32, width * 3 * scale);
         defer std.testing.allocator.free(pixels);

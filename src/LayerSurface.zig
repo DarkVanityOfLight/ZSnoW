@@ -19,10 +19,10 @@ frame_callback: ?*wl.Callback = null,
 configured: bool,
 output: *Output,
 
-height: u32 = 0,
-width: u32 = 0,
+height: usize = 0,
+width: usize = 0,
 time: u32 = 0,
-scale: u32,
+scale: usize,
 
 pub fn init(compositor: *wl.Compositor, layer_shell: *zwlr.LayerShellV1, output: *Output, scale: i32) !Self {
     // std.debug.assert(self.activeState == null);

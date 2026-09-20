@@ -11,10 +11,10 @@ pixels: [2][]u32,
 current_index: usize = 0,
 busy: [2]bool = .{ false, false },
 
-pub fn init(io: std.Io, width: u32, height: u32, name: []const u8, shm: *wl.Shm) !Self {
-    const stride = @as(u64, width) * 4;
-    const buffer_size = stride * height;
-    const total_size = buffer_size * 2;
+pub fn init(io: std.Io, width: usize, height: usize, name: []const u8, shm: *wl.Shm) !Self {
+    const stride = try std.math.mul(usize, width, @sizeOf(u32));
+    const buffer_size = try std.math.mul(usize, stride, height);
+    const total_size = try std.math.mul(usize, buffer_size, 2);
 
     const fd = try posix.memfd_create(name, 0);
 
@@ -29,7 +29,7 @@ pub fn init(io: std.Io, width: u32, height: u32, name: []const u8, shm: *wl.Shm)
     // Map into memory
     const memory = try posix.mmap(
         null,
-        @intCast(total_size),
+        total_size,
         .{ .READ = true, .WRITE = true },
         .{ .TYPE = .SHARED },
         fd,

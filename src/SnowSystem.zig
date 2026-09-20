@@ -43,7 +43,7 @@ fn resetFlakesTo(self: *Self, to: usize) void {
     self.missing_flakes = to;
 }
 
-pub fn update(self: *Self, width: u32, height: u32, time_delta: u32) void {
+pub fn update(self: *Self, width: usize, height: usize, time_delta: u32) void {
     const scaled_delta = @as(f64, @floatFromInt(time_delta)) * self.settings.speed;
     const removed: usize = snow.updateFlakes(
         &self.flakes,
@@ -72,17 +72,18 @@ fn checkParticleLifecycle(alloc: std.mem.Allocator) !void {
         .flakes = try snow.FlakeArray.initCapacity(alloc, 2),
         .prng = std.Random.DefaultPrng.init(42),
         .missing_flakes = 0,
+        .settings = .{},
         .alloc = alloc,
     };
     defer system.deinit();
     for (0..2) |_| {
-        const flake = try snow.generateRandomFlake(system.prng.random(), 1920, alloc);
+        const flake = try snow.generateRandomFlake(system.prng.random(), 1920, 1, alloc);
         system.flakes.appendAssumeCapacity(flake);
     }
     system.resetFlakesTo(10);
     try std.testing.expectEqual(@as(usize, 0), system.flakes.items.len);
-    try std.testing.expectEqual(@as(u32, 10), system.missing_flakes);
-    const flake = try snow.generateRandomFlake(system.prng.random(), 1920, alloc);
+    try std.testing.expectEqual(@as(usize, 10), system.missing_flakes);
+    const flake = try snow.generateRandomFlake(system.prng.random(), 1920, 1, alloc);
     system.flakes.appendAssumeCapacity(flake);
     // Expiration must free both the particle and its pattern allocations.
     _ = snow.updateFlakes(&system.flakes, alloc, 1, 1000);

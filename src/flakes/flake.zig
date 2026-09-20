@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const Coordinates = struct { x: u32, y: u32 };
+pub const Coordinates = struct { x: usize, y: usize };
 
 // zig fmt: off
 pub const FlakePattern = struct {
@@ -159,16 +159,16 @@ pub const Flake = struct {
     }
 
     pub fn normalizeCoordinates(flake: *const Flake) Coordinates {
-        const x: u32 = @intFromFloat(flake.x);
-        const y: u32 = @intFromFloat(flake.y);
+        const x: usize = @intFromFloat(flake.x);
+        const y: usize = @intFromFloat(flake.y);
         return Coordinates{ .x = x, .y = y };
     }
 
-    pub fn normalizeX(flake: *const Flake) u32 {
+    pub fn normalizeX(flake: *const Flake) usize {
         return @intFromFloat(flake.x);
     }
 
-    pub fn normalizeY(flake: *const Flake) u32 {
+    pub fn normalizeY(flake: *const Flake) usize {
         return @intFromFloat(flake.y);
     }
 
