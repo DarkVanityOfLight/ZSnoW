@@ -11,7 +11,16 @@ pub const std_options: std.Options = .{
 };
 
 pub fn main(init: std.process.Init) !void {
-    const root = try Config.cliSetup(init.io, init.gpa, run);
+    var wbuf: [1024]u8 = undefined;
+    var stdout_writer = std.Io.File.Writer.init(.stdout(), init.io, &wbuf);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
+
+    var rbuf: [1024]u8 = undefined;
+    var stdin_reader = std.Io.File.Reader.init(.stdin(), init.io, &rbuf);
+    const stdin = &stdin_reader.interface;
+
+    const root = try Config.cliSetup(init.io, init.gpa, stdin, stdout, run);
     var args_iter = init.minimal.args.iterate();
     root.runAndExit(&args_iter, .{});
 }

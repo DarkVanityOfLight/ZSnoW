@@ -13,16 +13,33 @@ speed_multiplier: f32,
 nFlakes: usize = 200,
 scale: usize = 1,
 
+const OptionError = error{
+    InvalidScale,
+    InvalidSpeed,
+};
+
 pub fn parseCli(ctx: CommandContext) !Self {
     const s = ctx.flag("ignore", []const u8);
     const outputs = std.mem.tokenizeScalar(u8, s, ',');
 
     const speed_multiplier_s = ctx.flag("speed", []const u8);
-    const speed_multiplier = try std.fmt.parseFloat(f32, speed_multiplier_s);
+    const speed_multiplier = std.fmt.parseFloat(f32, speed_multiplier_s) catch {
+        std.log.err("Invalid speed argument {s} is not a float", .{speed_multiplier_s});
+        return OptionError.InvalidSpeed;
+    };
+
+    if (speed_multiplier <= 0 or std.math.isNan(speed_multiplier)) {
+        std.log.err("Invalid speed argument {s} is non positive or NaN", .{speed_multiplier_s});
+        return OptionError.InvalidSpeed;
+    }
 
     const nFlakes = ctx.flag("nFlakes", usize);
 
     const scale = ctx.flag("scale", usize);
+    if (scale == 0) {
+        std.log.err("Scale needs to be >= 1", .{});
+        return OptionError.InvalidScale;
+    }
 
     return .{
         .ignored_outputs = outputs,
@@ -32,16 +49,7 @@ pub fn parseCli(ctx: CommandContext) !Self {
     };
 }
 
-pub fn cliSetup(io: std.Io, gpa: std.mem.Allocator, execFn: ExecFn) !*zli.Command {
-    var wbuf: [1024]u8 = undefined;
-    var stdout_writer = std.Io.File.Writer.init(.stdout(), io, &wbuf);
-    const stdout = &stdout_writer.interface;
-    defer stdout.flush() catch {};
-
-    var rbuf: [1024]u8 = undefined;
-    var stdin_reader = std.Io.File.Reader.init(.stdin(), io, &rbuf);
-    const stdin = &stdin_reader.interface;
-
+pub fn cliSetup(io: std.Io, gpa: std.mem.Allocator, stdin: *std.Io.Reader, stdout: *std.Io.Writer, execFn: ExecFn) !*zli.Command {
     const init_options = zli.InitOptions{
         .allocator = gpa,
         .io = io,
