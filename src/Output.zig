@@ -1,9 +1,6 @@
 const std = @import("std");
 const SnowSystem = @import("SnowSystem.zig");
-const DoubleBuffer = @import("DoubleBuffer.zig");
-// const Context = @import("waylandsetup.zig").Context;
 
-const Wayland = @import("Wayland.zig");
 const LayerSurface = @import("LayerSurface.zig");
 const wl = @import("wayland").client.wl;
 const zwlr = @import("wayland").client.zwlr;
@@ -63,11 +60,6 @@ pub fn deactivate(self: *Self) void {
         self.layer_surface = null;
     }
 }
-
-// pub fn applyConfiguration(self: *Self, compositor: *wl.Compositor, layer_shell: *zwlr.LayerShellV1) !void {
-//     self.deactivate();
-//     try self.activate(compositor, layer_shell);
-// }
 
 pub fn deinit(self: *Self) void {
     self.deactivate();

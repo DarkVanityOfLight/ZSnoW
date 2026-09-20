@@ -1,11 +1,9 @@
 const std = @import("std");
-const mem = std.mem;
 
 const Wayland = @import("Wayland.zig");
 
 const zli = @import("zli");
 
-const snow = @import("snow.zig");
 const Config = @import("Config.zig");
 
 pub const std_options: std.Options = .{

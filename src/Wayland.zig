@@ -7,8 +7,6 @@ const zwlr = wayland.client.zwlr;
 const Output = @import("Output.zig");
 
 const Config = @import("Config.zig");
-const DoubleBuffer = @import("DoubleBuffer.zig");
-const LayerSurface = @import("LayerSurface.zig");
 
 const Self = @This();
 
