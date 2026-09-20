@@ -191,8 +191,8 @@ fn addOutput(
         self.io,
         output,
         name,
-        self.config.nFlakes,
         self.shm.?,
+        self.config.makeSnowSettings(),
     );
     self.outputs.appendAssumeCapacity(outputState);
 

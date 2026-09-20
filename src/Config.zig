@@ -2,20 +2,26 @@ const std = @import("std");
 
 const zli = @import("zli");
 const CommandContext = @import("zli").CommandContext;
+const SnowSettings = @import("SnowSystem.zig").Settings;
 
 const ExecFn = *const fn (ctx: CommandContext) anyerror!void;
 
 const Self = @This();
 
 ignored_outputs: std.mem.TokenIterator(u8, .scalar),
+speed_multiplier: f32,
 nFlakes: u32 = 200,
 
-pub fn parseCli(ctx: CommandContext) Self {
+pub fn parseCli(ctx: CommandContext) !Self {
     const s = ctx.flag("ignore", []const u8);
     const outputs = std.mem.tokenizeScalar(u8, s, ',');
 
+    const speed_multiplier_s = ctx.flag("speed", []const u8);
+    const speed_multiplier = try std.fmt.parseFloat(f32, speed_multiplier_s);
+
     return .{
         .ignored_outputs = outputs,
+        .speed_multiplier = speed_multiplier,
     };
 }
 
@@ -53,6 +59,20 @@ pub fn cliSetup(io: std.Io, gpa: std.mem.Allocator, execFn: ExecFn) !*zli.Comman
         .default_value = .{ .String = "" },
     });
 
+    try root.addFlag(.{
+        .name = "speed",
+        .description = "Particle speed multiplier as float",
+        .type = .String,
+        .default_value = .{ .String = "1.0" },
+    });
+
     try root.addCommands(&.{});
     return root;
+}
+
+pub fn makeSnowSettings(self: *Self) SnowSettings {
+    return .{
+        .speed = self.speed_multiplier,
+        .nFlakes = self.nFlakes,
+    };
 }

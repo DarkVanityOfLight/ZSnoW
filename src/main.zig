@@ -17,7 +17,7 @@ pub fn main(init: std.process.Init) !void {
 }
 
 fn run(ctx: zli.CommandContext) !void {
-    const config = Config.parseCli(ctx);
+    const config = try Config.parseCli(ctx);
     const wayland = try Wayland.init(ctx.allocator, ctx.io, config);
     defer {
         wayland.deinit();

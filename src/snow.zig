@@ -33,8 +33,7 @@ pub fn generateRandomFlake(rand: std.Random, outputWidth: u32, alloc: std.mem.Al
     return flake;
 }
 
-pub fn updateFlakes(flakeArray: *FlakeArray, alloc: std.mem.Allocator, height: u32, timeDelta: u32) u32 {
-    const floatDelta = @as(f32, @floatFromInt(timeDelta));
+pub fn updateFlakes(flakeArray: *FlakeArray, alloc: std.mem.Allocator, height: u32, timeDelta: f64) u32 {
     var removed: u32 = 0;
     var i: usize = flakeArray.items.len;
 
@@ -42,7 +41,7 @@ pub fn updateFlakes(flakeArray: *FlakeArray, alloc: std.mem.Allocator, height: u
         i -= 1;
         const flake = flakeArray.items[i];
 
-        flake.move(flake.dx * floatDelta, flake.dy * floatDelta);
+        flake.move(flake.dx * timeDelta, flake.dy * timeDelta);
 
         if (flake.normalizeY() >= height) {
             _ = flakeArray.swapRemove(i);

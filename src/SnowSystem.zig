@@ -3,21 +3,28 @@ const std = @import("std");
 
 const Self = @This();
 
+pub const Settings = struct {
+    speed: f32 = 1.0,
+    nFlakes: u32,
+};
+
 flakes: snow.FlakeArray,
 prng: std.Random.DefaultPrng,
 missing_flakes: u32,
 alloc: std.mem.Allocator,
+settings: Settings,
 
-pub fn init(alloc: std.mem.Allocator, io: std.Io, nFlakes: u32) !Self {
+pub fn init(alloc: std.mem.Allocator, io: std.Io, settings: Settings) !Self {
     return .{
-        .flakes = try snow.FlakeArray.initCapacity(alloc, nFlakes),
-        .missing_flakes = nFlakes,
+        .flakes = try snow.FlakeArray.initCapacity(alloc, settings.nFlakes),
+        .missing_flakes = settings.nFlakes,
         .prng = std.Random.DefaultPrng.init(blk: {
             var seed: u64 = undefined;
             io.random(std.mem.asBytes(&seed));
             break :blk seed;
         }),
         .alloc = alloc,
+        .settings = settings,
     };
 }
 
@@ -32,7 +39,8 @@ pub fn resetFlakesTo(self: *Self, nFlakes: u32) void {
 }
 
 pub fn update(self: *Self, width: u32, height: u32, time_delta: u32) void {
-    const removed = snow.updateFlakes(&self.flakes, self.alloc, height, time_delta);
+    const scaled_delta = @as(f64, @floatFromInt(time_delta)) * self.settings.speed;
+    const removed = snow.updateFlakes(&self.flakes, self.alloc, height, scaled_delta);
     self.missing_flakes = snow.spawnNewFlakes(
         self.prng.random(),
         &self.flakes,

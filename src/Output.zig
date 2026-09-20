@@ -23,11 +23,11 @@ alloc: std.mem.Allocator,
 io: std.Io,
 shm: *wl.Shm,
 
-pub fn init(alloc: std.mem.Allocator, io: std.Io, wl_output: *wl.Output, name: u32, flake_count: u32, shm: *wl.Shm) !Self {
+pub fn init(alloc: std.mem.Allocator, io: std.Io, wl_output: *wl.Output, name: u32, shm: *wl.Shm, snowSettings: SnowSystem.Settings) !Self {
     return .{
         .wl_output = wl_output,
         .uname = name,
-        .snowSystem = try SnowSystem.init(alloc, io, flake_count),
+        .snowSystem = try SnowSystem.init(alloc, io, snowSettings),
         .alloc = alloc,
         .io = io,
         .shm = shm,
