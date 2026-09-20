@@ -1,11 +1,8 @@
 const std = @import("std");
 const mem = std.mem;
 
-const wayland = @import("wayland");
-const wl = wayland.client.wl;
-const zwlr = wayland.client.zwlr;
+const Wayland = @import("Wayland.zig");
 
-const setup = @import("waylandsetup.zig").setup;
 const zli = @import("zli");
 
 const snow = @import("snow.zig");
@@ -23,12 +20,12 @@ pub fn main(init: std.process.Init) !void {
 
 fn run(ctx: zli.CommandContext) !void {
     const config = Config.parseCli(ctx);
-    const context = try setup(ctx.allocator, ctx.io, config);
+    const wayland = try Wayland.init(ctx.allocator, ctx.io, config);
     defer {
-        context.deinit();
-        ctx.allocator.destroy(context);
+        wayland.deinit();
+        ctx.allocator.destroy(wayland);
     }
 
     // Keep running
-    while (true) if (context.display.dispatch() != .SUCCESS) return error.Dispatchfailed;
+    while (true) if (wayland.display.dispatch() != .SUCCESS) return error.Dispatchfailed;
 }

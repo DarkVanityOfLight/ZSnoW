@@ -1,11 +1,11 @@
 const std = @import("std");
 const SnowSystem = @import("SnowSystem.zig");
 const DoubleBuffer = @import("DoubleBuffer.zig");
-const Context = @import("waylandsetup.zig").Context;
+// const Context = @import("waylandsetup.zig").Context;
 
-const wayland = @import("wayland");
-const wl = wayland.client.wl;
-const zwlr = wayland.client.zwlr;
+const Wayland = @import("Wayland.zig");
+const wl = @import("wayland").client.wl;
+const zwlr = @import("wayland").client.zwlr;
 
 const Self = @This();
 
@@ -31,18 +31,22 @@ running: bool = true,
 
 snowSystem: SnowSystem,
 activeState: ?ActiveState = null,
-context: *Context,
 alloc: std.mem.Allocator,
+
+// These fields should be refactored away
+io: std.Io,
+shm: *wl.Shm,
 
 /// Takes ownership of output only on success. Keep this state at a stable
 /// address once activated: Wayland listeners refer to it and its buffers.
-pub fn init(alloc: std.mem.Allocator, io: std.Io, output: *wl.Output, name: u32, flake_count: u32, context: *Context) !Self {
+pub fn init(alloc: std.mem.Allocator, io: std.Io, output: *wl.Output, name: u32, flake_count: u32, shm: *wl.Shm) !Self {
     return .{
         .output = output,
         .uname = name,
         .snowSystem = try SnowSystem.init(alloc, io, flake_count),
-        .context = context,
         .alloc = alloc,
+        .io = io,
+        .shm = shm,
     };
 }
 
@@ -52,13 +56,8 @@ pub fn setName(self: *Self, name: [*:0]const u8) !void {
     self.name = replacement;
 }
 
-pub fn activate(self: *Self, context: *Context) !void {
+pub fn activate(self: *Self, compositor: *wl.Compositor, layer_shell: *zwlr.LayerShellV1) !void {
     std.debug.assert(self.activeState == null);
-
-    // Create backed memory
-    // const shm = context.shm orelse return error.NoWlShm;
-    const compositor = context.compositor orelse return error.NoWlCompositor;
-    const layer_shell = context.layer_shell orelse return error.NoLayerShell;
 
     // Create a surface
     const surface = try compositor.createSurface();
@@ -116,9 +115,9 @@ pub fn attachCurrentBuffer(self: *Self) void {
     self.activeState.?.doubleBuffer.?.attach(self.activeState.?.surface);
 }
 
-pub fn applyConfiguration(self: *Self, context: *Context) !void {
+pub fn applyConfiguration(self: *Self, context: *Wayland) !void {
     self.deactivate();
-    try self.activate(context);
+    try self.activate(context.compositor.?, context.layer_shell.?);
 }
 
 pub fn deinit(self: *Self) void {

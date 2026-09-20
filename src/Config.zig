@@ -8,6 +8,7 @@ const ExecFn = *const fn (ctx: CommandContext) anyerror!void;
 const Self = @This();
 
 ignored_outputs: std.mem.TokenIterator(u8, .scalar),
+nFlakes: u32 = 200,
 
 pub fn parseCli(ctx: CommandContext) Self {
     const s = ctx.flag("ignore", []const u8);
