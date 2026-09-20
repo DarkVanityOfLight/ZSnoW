@@ -23,8 +23,6 @@ alloc: std.mem.Allocator,
 io: std.Io,
 shm: *wl.Shm,
 
-/// Takes ownership of output only on success. Keep this state at a stable
-/// address once activated: Wayland listeners refer to it and its buffers.
 pub fn init(alloc: std.mem.Allocator, io: std.Io, wl_output: *wl.Output, name: u32, flake_count: u32, shm: *wl.Shm) !Self {
     return .{
         .wl_output = wl_output,
@@ -50,7 +48,7 @@ pub fn activate(self: *Self, compositor: *wl.Compositor, layer_shell: *zwlr.Laye
         self.scale,
     );
     self.running = true;
-    self.layer_surface.?.listen();
+    self.layer_surface.?.listenConfig();
 }
 
 pub fn deactivate(self: *Self) void {

@@ -63,13 +63,13 @@ pub fn init(compositor: *wl.Compositor, layer_shell: *zwlr.LayerShellV1, output:
     };
 }
 
-pub fn listen(self: *Self) void {
+pub fn listenConfig(self: *Self) void {
     // output.activeState.?.layer_surface.setListener(*Output, layerSurfaceListener, output);
-    self.layer_surface.setListener(*Self, listener, self);
+    self.layer_surface.setListener(*Self, configListener, self);
     self.surface.commit();
 }
 
-fn listener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Event, self: *Self) void {
+fn configListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Event, self: *Self) void {
     switch (event) {
         .configure => |configure| {
             std.log.debug("Received configure call for layer surface: {any}", .{configure});
