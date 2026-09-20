@@ -68,7 +68,7 @@ const zwlr = wayland.client.zwlr;
 const OutputState = @import("OutputState.zig");
 const animation = @import("animation.zig");
 
-const CliContext = @import("main.zig").CliContext;
+const Config = @import("Config.zig");
 const DoubleBuffer = @import("DoubleBuffer.zig");
 
 const nFlakes = 200;
@@ -82,7 +82,7 @@ pub const Context = struct {
     io: std.Io,
     display: *wl.Display,
     registry: *wl.Registry,
-    cli_context: CliContext,
+    config: Config,
 
     pub fn deinit(self: *Context) void {
         for (self.outputs.items) |output| {
@@ -98,7 +98,7 @@ pub const Context = struct {
     }
 };
 
-fn createContext(alloc: std.mem.Allocator, io: std.Io, cli_context: CliContext) !*Context {
+fn createContext(alloc: std.mem.Allocator, io: std.Io, config: Config) !*Context {
     const display = try wl.Display.connect(null);
     errdefer display.disconnect();
 
@@ -116,13 +116,13 @@ fn createContext(alloc: std.mem.Allocator, io: std.Io, cli_context: CliContext) 
         .io = io,
         .display = display,
         .registry = registry,
-        .cli_context = cli_context,
+        .config = config,
     };
     return context;
 }
 
-pub fn setup(alloc: std.mem.Allocator, io: std.Io, cli_context: CliContext) !*Context {
-    const context = try createContext(alloc, io, cli_context);
+pub fn setup(alloc: std.mem.Allocator, io: std.Io, config: Config) !*Context {
+    const context = try createContext(alloc, io, config);
     errdefer {
         context.deinit();
         alloc.destroy(context);
@@ -291,7 +291,7 @@ fn configureOutput(output: *wl.Output, event: wl.Output.Event, context: *Context
     switch (event) {
         .name => |name|{
             // Check if the output should be ignored
-            var ignored = context.cli_context.ignored_outputs;
+            var ignored = context.config.ignored_outputs;
             while (ignored.next()) |candidate| {
               if (mem.eql(u8, candidate, mem.span(name.name))) {
                   removeOutput(context, outputInfo.uname);

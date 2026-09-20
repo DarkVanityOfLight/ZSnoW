@@ -9,7 +9,6 @@ uname: u32,
 // Defaultet
 height: u32 = 0,
 width: u32 = 0,
-swap_dimensions: bool = false,
 time: u32 = 0,
 running: bool = true,
 scale: i32 = 1,
