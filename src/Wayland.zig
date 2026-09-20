@@ -10,6 +10,7 @@ const animation = @import("animation.zig");
 
 const Config = @import("Config.zig");
 const DoubleBuffer = @import("DoubleBuffer.zig");
+const LayerSurface = @import("LayerSurface.zig");
 
 const Self = @This();
 
@@ -117,14 +118,17 @@ fn isIgnored(
     return false;
 }
 
-fn configureOutput(wl_output: *wl.Output, event: wl.Output.Event, self: *Self) void {
-    // Find the correct output to configure
-    const output = blk: {
-        for (self.outputs.items) |outputStateIterated| {
-            if (wl_output == outputStateIterated.output) {
-                break :blk outputStateIterated;
-            }
+fn findOutput(self: *Self, wl_output: *wl.Output) ?*Output {
+    for (self.outputs.items) |output| {
+        if (wl_output == output.wl_output) {
+            return output;
         }
+    }
+    return null;
+}
+
+fn configureOutput(wl_output: *wl.Output, event: wl.Output.Event, self: *Self) void {
+    const output = self.findOutput(wl_output) orelse {
         std.log.warn("Received unmanaged output", .{});
         return;
     };
@@ -136,17 +140,14 @@ fn configureOutput(wl_output: *wl.Output, event: wl.Output.Event, self: *Self) v
             // Check if the output should be ignored
             if (isIgnored(name.name, self.config.ignored_outputs)) {
                 self.removeOutput(output.uname);
-                return;
+            } else {
+                output.setName(name.name) catch |err| {
+                    std.log.warn("Failed to set name: {any}", .{err});
+                };
             }
-
-            output.setName(name.name) catch |err| {
-                std.log.warn("Failed to set name: {any}", .{err});
-            };
         },
 
-        .scale => |scale| {
-            output.scale = scale.factor;
-        },
+        .scale => |scale| output.scale = scale.factor,
 
         .done => {
             self.manageOutput(output) catch {
@@ -215,7 +216,6 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, self: *Sel
     }
 }
 
-
 /// Initializes required fields in OutputInfo to manage an output
 fn manageOutput(self: *Self, output: *Output) !void {
     // Deactivate old if exists
@@ -223,64 +223,6 @@ fn manageOutput(self: *Self, output: *Output) !void {
     try output.activate(self.compositor.?, self.layer_shell.?);
 
     output.snowSystem.resetFlakesTo(self.config.nFlakes);
-
-    // Listen for configure and kill calls
-    output.activeState.?.layer_surface.setListener(*Output, layerSurfaceListener, output);
-
-    output.activeState.?.surface.commit();
-}
-
-// TODO: Move to own module
-/// Listen to events of our layer surface
-fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Event, output: *Output) void {
-    switch (event) {
-        .configure => |configure| {
-            std.log.debug("Received configure call for layer surface: {any}", .{configure});
-            layer_surface.ackConfigure(configure.serial);
-
-            if (output.height == event.configure.height and
-                output.width == event.configure.width and
-                output.activeState.?.doubleBuffer != null) return;
-
-            const scale: u32 = @intCast(output.scale);
-            const buffer_width = configure.width * scale;
-            const buffer_height = configure.height * scale;
-            const replacement = DoubleBuffer.init(
-                output.io,
-                buffer_width,
-                buffer_height,
-                output.name orelse "ZSnoW",
-                output.shm,
-            ) catch |err| {
-                std.log.err("Failed to create buffers: {s}", .{@errorName(err)});
-                return;
-            };
-
-            const state = &output.activeState.?;
-            if (state.doubleBuffer) |*old| old.deinit();
-            state.doubleBuffer = replacement;
-            state.doubleBuffer.?.listen();
-
-            output.height = configure.height;
-            output.width = configure.width;
-            
-
-            if(output.activeState.?.configured) return;
-
-            // Need to attach buffer once to receive frame callbacks
-            output.attachCurrentBuffer();
-            animation.requestFrame(output) catch return;
-            output.activeState.?.surface.commit();
-            output.activeState.?.configured = true;
-        },
-
-        .closed => {
-            std.log.info("Received closing call", .{});
-            output.deactivate();
-        }
-
-    }
-
 }
 
 pub fn deinit(self: *Self) void {

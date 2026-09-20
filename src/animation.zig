@@ -8,18 +8,18 @@ const Output = @import("Output.zig");
 const std = @import("std");
 
 pub fn requestFrame(output: *Output) !void {
-    const state = &output.activeState.?;
-    if (state.frame_callback != null) return;
+    const layer_surface = &output.layer_surface.?;
+    if (layer_surface.frame_callback != null) return;
 
-    const cb = try state.surface.frame();
+    const cb = try layer_surface.surface.frame();
     cb.setListener(*Output, frameCallback, output);
-    state.frame_callback = cb;
+    layer_surface.frame_callback = cb;
 }
 
 fn frameCallback(cb: *wl.Callback, event: wl.Callback.Event, output: *Output) void {
     if (!output.running) return;
 
-    if (output.activeState) |*s| {
+    if (output.layer_surface) |*s| {
         // Handle future callbacks
         s.frame_callback = null;
         cb.destroy();
